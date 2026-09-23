@@ -1,5 +1,5 @@
 from django.contrib import admin
-from django.http import HttpResponseRedirect
+from django.http import JsonResponse
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
@@ -53,7 +53,7 @@ router.register(r'shipments', ShipmentViewSet)
 
 
 def home(request):
-    return HttpResponseRedirect('http://127.0.0.1:5173/')
+    return JsonResponse({'status': 'ok'})
 
 urlpatterns = [
     path('', home, name='home'),
