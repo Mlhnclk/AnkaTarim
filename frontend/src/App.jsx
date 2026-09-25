@@ -1032,6 +1032,23 @@ function App() {
     downloadCsv(rows, "satis-raporu.csv");
   };
 
+  const printHtmlInPage = (html) => {
+    const frame = document.createElement("iframe");
+    frame.title = "Yazdırılabilir fiş";
+    frame.style.position = "fixed";
+    frame.style.width = "1px";
+    frame.style.height = "1px";
+    frame.style.border = "0";
+    frame.style.opacity = "0";
+    frame.onload = () => {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+      window.setTimeout(() => frame.remove(), 1000);
+    };
+    frame.srcdoc = html;
+    document.body.appendChild(frame);
+  };
+
   const sendWhatsApp = async (record, phone = "") => {
     const messageText =
       record.whatsapp_message ||
@@ -1042,11 +1059,13 @@ function App() {
       messageText || previewMessage || "Zeytin takip bilgisi",
     );
     const normalizedPhone = normalizeWhatsAppPhone(phone);
-    window.open(
-      `https://wa.me/${normalizedPhone}?text=${text}`,
+    const whatsappUrl = `https://wa.me/${normalizedPhone}?text=${text}`;
+    const whatsappWindow = window.open(
+      whatsappUrl,
       "_blank",
       "noopener,noreferrer",
     );
+    if (!whatsappWindow) window.location.assign(whatsappUrl);
     const update = {
       whatsapp_status: "Gönderildi",
       whatsapp_sent_at: new Date().toISOString(),
@@ -1068,7 +1087,6 @@ function App() {
 
   const printReceipt = (record) => {
     const receiptWindow = window.open("", "_blank", "width=420,height=720");
-    if (!receiptWindow) return;
     const messageText =
       record.whatsapp_message ||
       record.whatsapp_message_content ||
@@ -1085,10 +1103,13 @@ function App() {
             '"': "&quot;",
           })[character],
       );
-    receiptWindow.document.write(
-      `<!doctype html><html lang="tr"><head><meta charset="UTF-8"><title>Fiş</title><style>body{font-family:Arial,sans-serif;padding:24px;max-width:360px}.message{white-space:pre-wrap;line-height:1.55}</style></head><body><h1>Anka Tarımsal Takip</h1><div class="message">${escapeHtml(messageText)}</div><script>window.onload=function(){window.print();}</script></body></html>`,
-    );
-    receiptWindow.document.close();
+    const html = `<!doctype html><html lang="tr"><head><meta charset="UTF-8"><title>Fiş</title><style>body{font-family:Arial,sans-serif;padding:24px;max-width:360px}.message{white-space:pre-wrap;line-height:1.55}</style></head><body><h1>Anka Tarımsal Takip</h1><div class="message">${escapeHtml(messageText)}</div><script>window.onload=function(){window.print();}</script></body></html>`;
+    if (receiptWindow) {
+      receiptWindow.document.write(html);
+      receiptWindow.document.close();
+    } else {
+      printHtmlInPage(html);
+    }
   };
 
   const printPaymentReceipt = ({
@@ -1102,7 +1123,6 @@ function App() {
     note,
   }) => {
     const receiptWindow = window.open("", "_blank", "width=420,height=720");
-    if (!receiptWindow) return;
     const escapeHtml = (value) =>
       String(value ?? "").replace(
         /[&<>'"]/g,
@@ -1130,10 +1150,13 @@ function App() {
           `<div class="row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`,
       )
       .join("");
-    receiptWindow.document.write(
-      `<!doctype html><html lang="tr"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;padding:24px;max-width:360px;color:#0f172a}h1{font-size:20px;margin:0 0 6px}.subtitle{color:#64748b;font-size:13px;margin:0 0 20px}.row{display:flex;justify-content:space-between;gap:20px;border-bottom:1px solid #e2e8f0;padding:10px 0;font-size:13px}.row span{color:#64748b}.row strong{text-align:right;white-space:pre-wrap}</style></head><body><h1>Anka Tarımsal Takip</h1><p class="subtitle">${escapeHtml(title)}</p>${rowMarkup}<script>window.onload=function(){window.print();}</script></body></html>`,
-    );
-    receiptWindow.document.close();
+    const html = `<!doctype html><html lang="tr"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;padding:24px;max-width:360px;color:#0f172a}h1{font-size:20px;margin:0 0 6px}.subtitle{color:#64748b;font-size:13px;margin:0 0 20px}.row{display:flex;justify-content:space-between;gap:20px;border-bottom:1px solid #e2e8f0;padding:10px 0;font-size:13px}.row span{color:#64748b}.row strong{text-align:right;white-space:pre-wrap}</style></head><body><h1>Anka Tarımsal Takip</h1><p class="subtitle">${escapeHtml(title)}</p>${rowMarkup}<script>window.onload=function(){window.print();}</script></body></html>`;
+    if (receiptWindow) {
+      receiptWindow.document.write(html);
+      receiptWindow.document.close();
+    } else {
+      printHtmlInPage(html);
+    }
   };
 
   const sendProcessWhatsApp = async (customer, processStatus) => {
@@ -1798,6 +1821,11 @@ function App() {
       resetStationForm();
     } catch (error) {
       console.error("Elek kaydedilemedi", error);
+      window.alert(
+        error.response?.data?.name?.[0] ||
+          error.response?.data?.detail ||
+          "Elek kaydedilemedi. Yetkinizi ve alanları kontrol edin.",
+      );
     }
   };
 
