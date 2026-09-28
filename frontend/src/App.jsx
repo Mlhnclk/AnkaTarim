@@ -7189,7 +7189,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.16),transparent_25%),linear-gradient(180deg,_#edf4ff_0%,_#f8fbff_100%)] text-slate-900">
-      <div className="mx-auto flex max-w-[1600px] gap-6 p-4 lg:p-6">
+      <div className="mx-auto flex max-w-[1600px] gap-3 p-3 sm:gap-4 sm:p-4 lg:gap-6 lg:p-6">
         <aside className="hidden w-72 shrink-0 rounded-[28px] border border-blue-900/10 bg-gradient-to-b from-[#071d35] via-[#0a2140] to-[#102f5d] p-5 text-white shadow-[0_18px_45px_rgba(7,29,53,0.28)] lg:flex lg:flex-col">
           <div className="flex items-center gap-3">
             <div className="rounded-[18px] bg-white/8 p-1 ring-1 ring-white/15">
