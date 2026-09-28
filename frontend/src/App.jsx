@@ -7256,7 +7256,7 @@ function App() {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">
                   Operasyon Merkezi
                 </p>
-                <h1 className="mt-2 text-2xl font-bold text-slate-900">
+                <h1 className="mt-2 text-xl font-bold text-slate-900 sm:text-2xl">
                   {businessMode === "merchant"
                     ? merchantTabs.find((tab) => tab.id === activeTab)?.label ||
                       "Genel Durum"
