@@ -37,11 +37,6 @@ select {
   font: inherit;
 }
 
-pre {
-  margin: 0;
-  font-family: 'Segoe UI', sans-serif;
-}
-
 button,
 input,
 select,
@@ -50,6 +45,8 @@ textarea {
 }
 
 pre {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
   overflow-wrap: anywhere;
 }
 
