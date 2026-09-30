@@ -7327,8 +7327,6 @@ function App() {
             </div>
           </header>
 
-          </header>
-
 <div className="mt-3 space-y-2 lg:hidden">
   <div className="flex gap-1 overflow-x-auto rounded-2xl bg-[#0a2140] p-1">
     {[
