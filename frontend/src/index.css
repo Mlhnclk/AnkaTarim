@@ -37,7 +37,33 @@ select {
   font: inherit;
 }
 
+button,
+input,
+select,
+textarea {
+  max-width: 100%;
+}
+
 pre {
   margin: 0;
   font-family: 'Segoe UI', sans-serif;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    min-height: auto;
+  }
 }
