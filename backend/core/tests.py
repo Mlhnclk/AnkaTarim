@@ -247,6 +247,30 @@ class ShipmentManagementTest(CompanyTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(SalesPayment.objects.filter(sale=self.sale).exists())
 
+    def test_sale_update_replaces_items_and_recalculates_total(self):
+        response = self.client.patch(
+            f'/api/sales-records/{self.sale.id}/',
+            {
+                'party_id': self.party.id,
+                'items': [{
+                    'olive_type': 'Ayvalık',
+                    'size': 13,
+                    'quantity_kg': '3.00',
+                    'unit_price': '12.50',
+                    'oil_release': False,
+                }],
+                'oil_items': [{'liters': '2.00', 'unit_price': '5.00'}],
+            },
+            content_type='application/json',
+            **self.auth_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.sale.refresh_from_db()
+        self.assertEqual(self.sale.total_amount, Decimal('47.50'))
+        self.assertEqual(self.sale.items.count(), 1)
+        self.assertEqual(self.sale.oil_items.count(), 1)
+
     def test_corporate_sale_creates_editable_shipment_with_load(self):
         response = self.client.post('/api/shipments/', {
             'sale_id': self.sale.id,

@@ -5,10 +5,12 @@ import {
   Factory,
   LogOut,
   MessageSquareText,
+  Pencil,
   Plus,
   Printer,
   ShieldCheck,
   Truck,
+  Trash2,
   UserCircle2,
   Wallet,
 } from "lucide-react";
@@ -31,6 +33,8 @@ import {
   getSortingRecords,
   getMerchantParties,
   createMerchantParty,
+  updateMerchantParty,
+  deleteMerchantParty,
   getDrivers,
   createDriver,
   updateDriver,
@@ -41,9 +45,11 @@ import {
   deleteVehicle,
   getSalesRecords,
   createSalesPayment,
+  deleteSalesRecord,
   getShipments,
   createShipment,
   updateShipment,
+  deleteShipment,
   patchShipment,
   createSalesRecord,
   updateSalesRecord,
@@ -427,8 +433,16 @@ function App() {
   const [selectedSaleTypes, setSelectedSaleTypes] = useState([]);
   const [saleTypeToAdd, setSaleTypeToAdd] = useState("");
   const [selectedSaleId, setSelectedSaleId] = useState(null);
+  const [editingSaleId, setEditingSaleId] = useState(null);
   const [merchantSearch, setMerchantSearch] = useState("");
   const [selectedMerchantPartyId, setSelectedMerchantPartyId] = useState(null);
+  const [isEditingMerchantParty, setIsEditingMerchantParty] = useState(false);
+  const [merchantPartyForm, setMerchantPartyForm] = useState({
+    party_type: "individual",
+    name: "",
+    phone: "",
+    address: "",
+  });
   const [merchantPaymentForm, setMerchantPaymentForm] = useState({
     saleId: "",
     paymentDate: getTodayDate(),
@@ -2143,6 +2157,8 @@ function App() {
 
   const selectedSale =
     salesRecords.find((sale) => sale.id === selectedSaleId) || null;
+  const saleBeingEdited =
+    salesRecords.find((sale) => sale.id === editingSaleId) || null;
   const salePriceMap = salesPrices.reduce((map, price) => {
     map[price.olive_type] = Object.fromEntries(
       sizeKeys.map((size) => [size, Number(price[`size_${size}`] || 0)]),
@@ -2207,12 +2223,111 @@ function App() {
       (sum, item) =>
         sum +
         Number(item.quantity_kg || 0) *
-          Number(salePriceMap[item.olive_type]?.[item.size] || 0),
+          Number(item.unit_price ?? salePriceMap[item.olive_type]?.[item.size] ?? 0),
       0,
     ) +
     (sellOliveOil
-      ? Number(saleOilLiters || 0) * Number(salesOilPrices[0]?.unit_price || 0)
+      ? Number(saleOilLiters || 0) * Number(saleBeingEdited?.oil_items?.[0]?.unit_price ?? salesOilPrices[0]?.unit_price ?? 0)
       : 0);
+
+  const resetSaleForm = () => {
+    setEditingSaleId(null);
+    setSaleForm({
+      partyType: "individual",
+      name: "",
+      phone: "",
+      address: "",
+      saleDate: getTodayDate(),
+      paidAmount: "",
+      vehicleId: "",
+      driverId: "",
+    });
+    setSaleItems([]);
+    setSaleOilLiters("");
+    setSellOliveOil(false);
+    setSelectedSaleTypes([]);
+    setSaleTypeToAdd("");
+  };
+
+  const handleSaleEdit = (sale) => {
+    setEditingSaleId(sale.id);
+    setSelectedSaleId(sale.id);
+    setActiveTab("merchant-sales");
+    setSaleForm({
+      partyType: sale.party?.party_type || "individual",
+      name: sale.party?.name || "",
+      phone: sale.party?.phone || "",
+      address: sale.party?.address || "",
+      saleDate: sale.sale_date,
+      paidAmount: String(sale.paid_amount ?? ""),
+      vehicleId: sale.vehicle?.id ? String(sale.vehicle.id) : "",
+      driverId: sale.driver?.id ? String(sale.driver.id) : "",
+    });
+    const items = sale.items || [];
+    setSaleItems(items.map((item) => ({ ...item, quantity_kg: String(item.quantity_kg) })));
+    setSelectedSaleTypes([...new Set(items.map((item) => item.olive_type))]);
+    const oilItems = sale.oil_items || [];
+    setSellOliveOil(oilItems.length > 0);
+    setSaleOilLiters(
+      oilItems.length
+        ? String(oilItems.reduce((sum, item) => sum + Number(item.liters || 0), 0))
+        : "",
+    );
+    setSaleTypeToAdd("");
+  };
+
+  const handleSaleDelete = async (sale) => {
+    const confirmed = window.confirm(
+      `Satış #${sale.sale_no} silinsin mi? Bu satışa bağlı tahsilatlar ve sevkiyat da silinir.`,
+    );
+    if (!confirmed) return;
+    try {
+      await deleteSalesRecord(sale.id);
+      setSalesRecords((previous) => previous.filter((item) => item.id !== sale.id));
+      setShipments((previous) => previous.filter((item) => item.sale?.id !== sale.id));
+      if (selectedSaleId === sale.id) setSelectedSaleId(null);
+      if (editingSaleId === sale.id) resetSaleForm();
+    } catch (error) {
+      window.alert(error.response?.data?.detail || "Satış silinemedi.");
+    }
+  };
+
+  const handleMerchantPartySave = async (event) => {
+    event.preventDefault();
+    const party = merchantParties.find((item) => item.id === selectedMerchantPartyId);
+    if (!party || !merchantPartyForm.name.trim() || !merchantPartyForm.phone.trim()) return;
+    try {
+      const response = await updateMerchantParty(party.id, {
+        ...merchantPartyForm,
+        name: merchantPartyForm.name.trim(),
+        phone: formatTurkishPhone(merchantPartyForm.phone),
+        address: merchantPartyForm.address.trim(),
+      });
+      setMerchantParties((previous) => previous.map((item) => item.id === party.id ? response.data : item));
+      setSalesRecords((previous) => previous.map((sale) =>
+        sale.party?.id === party.id ? { ...sale, party: response.data } : sale,
+      ));
+      setIsEditingMerchantParty(false);
+    } catch (error) {
+      window.alert(error.response?.data?.name?.[0] || error.response?.data?.address?.[0] || "Müşteri bilgileri güncellenemedi.");
+    }
+  };
+
+  const handleMerchantPartyDelete = async (party) => {
+    if (salesRecords.some((sale) => sale.party?.id === party.id)) {
+      window.alert("Bu tüccarın satışları var. Önce satış kayıtlarını silin; satış silme işlemi bağlı tahsilat ve sevkiyatları da kaldırır.");
+      return;
+    }
+    if (!window.confirm(`${party.name} müşteri kaydı silinsin mi?`)) return;
+    try {
+      await deleteMerchantParty(party.id);
+      setMerchantParties((previous) => previous.filter((item) => item.id !== party.id));
+      setSelectedMerchantPartyId(null);
+      setIsEditingMerchantParty(false);
+    } catch {
+      window.alert("Müşteri kaydı silinemedi.");
+    }
+  };
 
   /* Satış müşterisini, kalemlerini ve kurumsal sevkiyat bilgisini kaydeder */
   const handleSaleSave = async (event) => {
@@ -2221,27 +2336,36 @@ function App() {
     const phone = formatTurkishPhone(saleForm.phone);
     const totalAmount = saleTotalAmount;
     const paidAmount = Number(saleForm.paidAmount || 0);
-    const oilUnitPrice = Number(salesOilPrices[0]?.unit_price || 0);
+    const oilUnitPrice = Number(saleBeingEdited?.oil_items?.[0]?.unit_price ?? salesOilPrices[0]?.unit_price ?? 0);
+    const previousPayments = (saleBeingEdited?.payments || []).reduce(
+      (sum, payment) => sum + Number(payment.amount || 0),
+      0,
+    );
     if (
       !name ||
       !phone ||
       totalAmount <= 0 ||
       paidAmount < 0 ||
-      paidAmount > totalAmount ||
+      paidAmount + previousPayments > totalAmount ||
       (!saleItems.length && !sellOliveOil) ||
       (sellOliveOil &&
         (oilUnitPrice <= 0 ||
           Number(saleOilLiters) <= 0 ||
           Number(saleOilLiters) >
-            Math.max(totalProducedOilLiters - totalSoldOilLiters, 0))) ||
-      !saleItems.every(
-        (item) =>
-          item.olive_type &&
-          Number(item.quantity_kg) > 0 &&
-          Number(item.quantity_kg) <=
-            Number(purchaseInventory[`${item.olive_type}|${item.size}`] || 0) -
-              Number(soldInventory[`${item.olive_type}|${item.size}`] || 0),
-      ) ||
+            Math.max(
+              totalProducedOilLiters - totalSoldOilLiters +
+                (saleBeingEdited?.oil_items || []).reduce((sum, item) => sum + Number(item.liters || 0), 0),
+              0,
+            ))) ||
+      !saleItems.every((item) => {
+        const existingQuantity = (saleBeingEdited?.items || [])
+          .filter((existing) => existing.olive_type === item.olive_type && Number(existing.size) === Number(item.size))
+          .reduce((sum, existing) => sum + Number(existing.quantity_kg || 0), 0);
+        const available = Number(purchaseInventory[`${item.olive_type}|${item.size}`] || 0)
+          - Number(soldInventory[`${item.olive_type}|${item.size}`] || 0)
+          + existingQuantity;
+        return item.olive_type && Number(item.quantity_kg) > 0 && Number(item.quantity_kg) <= available;
+      }) ||
       (saleForm.partyType === "corporate" && !saleForm.address.trim())
     )
       return;
@@ -2252,15 +2376,16 @@ function App() {
           party.name.trim().toLocaleLowerCase("tr-TR") ===
             name.toLocaleLowerCase("tr-TR"),
       );
+      const partyData = {
+        party_type: saleForm.partyType,
+        name,
+        phone,
+        address: saleForm.address.trim(),
+      };
       const partyResponse = existingParty
-        ? { data: existingParty }
-        : await createMerchantParty({
-            party_type: saleForm.partyType,
-            name,
-            phone,
-            address: saleForm.address.trim(),
-          });
-      const saleResponse = await createSalesRecord({
+        ? await updateMerchantParty(existingParty.id, partyData)
+        : await createMerchantParty(partyData);
+      const salePayload = {
         party_id: partyResponse.data.id,
         vehicle_id: saleForm.partyType === "corporate" && saleForm.vehicleId ? Number(saleForm.vehicleId) : null,
         driver_id: saleForm.partyType === "corporate" && saleForm.driverId ? Number(saleForm.driverId) : null,
@@ -2270,33 +2395,24 @@ function App() {
         items: saleItems.map((item) => ({
           ...item,
           quantity_kg: Number(item.quantity_kg),
-          unit_price: salePriceMap[item.olive_type]?.[item.size] || 0,
+          unit_price: Number(item.unit_price ?? salePriceMap[item.olive_type]?.[item.size] ?? 0),
           oil_release: false,
         })),
         oil_items: sellOliveOil
           ? [{ liters: Number(saleOilLiters), unit_price: oilUnitPrice }]
           : [],
-      });
-      if (!existingParty) {
-        setMerchantParties((previous) => [...previous, partyResponse.data]);
-      }
-      setSalesRecords((previous) => [saleResponse.data, ...previous]);
+      };
+      const saleResponse = editingSaleId
+        ? await updateSalesRecord(editingSaleId, salePayload)
+        : await createSalesRecord(salePayload);
+      setMerchantParties((previous) => existingParty
+        ? previous.map((party) => party.id === existingParty.id ? partyResponse.data : party)
+        : [...previous, partyResponse.data]);
+      setSalesRecords((previous) => editingSaleId
+        ? previous.map((sale) => sale.id === saleResponse.data.id ? saleResponse.data : sale)
+        : [saleResponse.data, ...previous]);
       setSelectedSaleId(saleResponse.data.id);
-      setSaleForm({
-        partyType: "individual",
-        name: "",
-        phone: "",
-        address: "",
-        saleDate: getTodayDate(),
-        paidAmount: "",
-        vehicleId: "",
-        driverId: "",
-      });
-      setSaleItems([]);
-      setSaleOilLiters("");
-      setSellOliveOil(false);
-      setSelectedSaleTypes([]);
-      setSaleTypeToAdd("");
+      resetSaleForm();
     } catch (error) {
       window.alert(
         error.response?.data?.detail || "Satış kaydı oluşturulamadı.",
@@ -2466,6 +2582,17 @@ function App() {
       } catch (error) {
         window.alert("Gönderim durumu güncellenemedi.");
       }
+    }
+  };
+
+  const handleShipmentDelete = async (shipment) => {
+    if (!window.confirm(`Satış #${shipment.sale?.sale_no} için teslimat kaydı silinsin mi?`)) return;
+    try {
+      await deleteShipment(shipment.id);
+      setShipments((previous) => previous.filter((item) => item.id !== shipment.id));
+      if (shipmentForm?.id === shipment.id) setShipmentForm(null);
+    } catch {
+      window.alert("Gönderim kaydı silinemedi.");
     }
   };
 
@@ -3392,21 +3519,30 @@ function App() {
         <div className="mt-4 space-y-2">
           {items.length ? (
             items.map((sale) => (
-              <button
-                key={sale.id}
-                type="button"
-                onClick={() => setSelectedSaleId(sale.id)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-left"
-              >
-                <div className="flex justify-between">
-                  <span className="font-semibold">{sale.party?.name}</span>
-                  <span className="text-xs">#{sale.sale_no}</span>
+              <div key={sale.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSaleId(sale.id)}
+                  className="w-full text-left"
+                >
+                  <div className="flex justify-between">
+                    <span className="font-semibold">{sale.party?.name}</span>
+                    <span className="text-xs">#{sale.sale_no}</span>
+                  </div>
+                  <p className="mt-1 text-xs">
+                    ₺{Number(sale.total_amount || 0).toFixed(2)} • Kalan ₺
+                    {Number(sale.remaining_amount || 0).toFixed(2)}
+                  </p>
+                </button>
+                <div className="mt-3 flex gap-3 border-t border-slate-200 pt-2">
+                  <button type="button" onClick={() => handleSaleEdit(sale)} className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700">
+                    <Pencil size={14} /> Düzenle
+                  </button>
+                  <button type="button" onClick={() => handleSaleDelete(sale)} className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700">
+                    <Trash2 size={14} /> Sil
+                  </button>
                 </div>
-                <p className="mt-1 text-xs">
-                  ₺{Number(sale.total_amount || 0).toFixed(2)} • Kalan ₺
-                  {Number(sale.remaining_amount || 0).toFixed(2)}
-                </p>
-              </button>
+              </div>
             ))
           ) : (
             <p className="text-sm text-slate-500">Kayıt bulunmuyor.</p>
@@ -3425,7 +3561,9 @@ function App() {
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
                 Satış Kaydı
               </p>
-              <h2 className="mt-1 text-2xl font-bold">Yeni satış oluştur</h2>
+              <h2 className="mt-1 text-2xl font-bold">
+                {editingSaleId ? `Satış #${editingSaleId} düzenle` : "Yeni satış oluştur"}
+              </h2>
             </div>
             <div className="flex gap-2">
               <button
@@ -3597,11 +3735,14 @@ function App() {
                     );
                     const available = Math.max(
                       (purchaseInventory[`${oliveType}|${size}`] || 0) -
-                        (soldInventory[`${oliveType}|${size}`] || 0),
+                        (soldInventory[`${oliveType}|${size}`] || 0) +
+                        (saleBeingEdited?.items || [])
+                          .filter((savedItem) => savedItem.olive_type === oliveType && Number(savedItem.size) === size)
+                          .reduce((sum, savedItem) => sum + Number(savedItem.quantity_kg || 0), 0),
                       0,
                     );
                     const unitPrice = Number(
-                      salePriceMap[oliveType]?.[size] || 0,
+                      item?.unit_price ?? salePriceMap[oliveType]?.[size] ?? 0,
                     );
                     return (
                       <label
@@ -3682,11 +3823,16 @@ function App() {
           </div>
           <button
             type="submit"
-            disabled={!selectedSaleTypes.length}
+            disabled={!selectedSaleTypes.length && !sellOliveOil}
             className="mt-5 rounded-xl bg-[#0b1f3a] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Satış Kaydını Oluştur
+            {editingSaleId ? "Değişiklikleri Kaydet" : "Satış Kaydını Oluştur"}
           </button>
+          {editingSaleId && (
+            <button type="button" onClick={resetSaleForm} className="ml-2 mt-5 rounded-xl border px-4 py-3 text-sm font-semibold">
+              Vazgeç
+            </button>
+          )}
         </form>
         <div className="grid gap-6 xl:grid-cols-2">
           {saleList("Bireysel", individualSales)}
@@ -3916,6 +4062,7 @@ function App() {
                   <th className="px-4 py-3">Tahsil edilen</th>
                   <th className="px-4 py-3">Kalan</th>
                   <th className="px-4 py-3">Gönderim</th>
+                  <th className="px-4 py-3">İşlemler</th>
                 </tr>
               </thead>
               <tbody>
@@ -3935,6 +4082,14 @@ function App() {
                       <td className="px-4 py-3 text-emerald-700">₺{Number(sale.total_paid || sale.paid_amount || 0).toFixed(2)}</td>
                       <td className="px-4 py-3 font-semibold text-amber-700">₺{Number(sale.remaining_amount || 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-slate-600">{shipment?.status === "Vardi" ? "Adrese ulaştı" : shipment?.status || "Gönderim yok"}</td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <button type="button" onClick={() => handleSaleEdit(sale)} className="mr-3 inline-flex items-center gap-1 text-blue-700">
+                          <Pencil size={14} /> Düzenle
+                        </button>
+                        <button type="button" onClick={() => handleSaleDelete(sale)} className="inline-flex items-center gap-1 text-rose-700">
+                          <Trash2 size={14} /> Sil
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -4065,8 +4220,43 @@ function App() {
                 <h2 className="mt-1 text-2xl font-bold text-slate-900">{selectedParty.name}</h2>
                 <p className="mt-1 text-sm text-slate-600">{selectedParty.phone} • {selectedParty.address || "Adres girilmemiş"}</p>
               </div>
-              <button type="button" onClick={() => setSelectedMerchantPartyId(null)} className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold">Kapat</button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMerchantPartyForm({
+                      party_type: selectedParty.party_type,
+                      name: selectedParty.name || "",
+                      phone: selectedParty.phone || "",
+                      address: selectedParty.address || "",
+                    });
+                    setIsEditingMerchantParty(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-blue-700"
+                >
+                  <Pencil size={15} /> Müşteriyi düzenle
+                </button>
+                <button type="button" onClick={() => handleMerchantPartyDelete(selectedParty)} className="inline-flex items-center gap-1 rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-rose-700">
+                  <Trash2 size={15} /> Müşteriyi sil
+                </button>
+                <button type="button" onClick={() => { setSelectedMerchantPartyId(null); setIsEditingMerchantParty(false); }} className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold">Kapat</button>
+              </div>
             </div>
+            {isEditingMerchantParty && (
+              <form onSubmit={handleMerchantPartySave} className="mt-5 grid gap-3 rounded-2xl border border-blue-200 bg-white p-4 md:grid-cols-2">
+                <select value={merchantPartyForm.party_type} onChange={(event) => setMerchantPartyForm((previous) => ({ ...previous, party_type: event.target.value }))} className="rounded-xl border px-3 py-2">
+                  <option value="individual">Bireysel</option>
+                  <option value="corporate">Kurumsal</option>
+                </select>
+                <input value={merchantPartyForm.name} onChange={(event) => setMerchantPartyForm((previous) => ({ ...previous, name: event.target.value }))} placeholder="Ad / Firma adı" className="rounded-xl border px-3 py-2" required />
+                <input type="tel" value={merchantPartyForm.phone} onChange={(event) => setMerchantPartyForm((previous) => ({ ...previous, phone: event.target.value }))} placeholder="Telefon" className="rounded-xl border px-3 py-2" required />
+                {merchantPartyForm.party_type === "corporate" && <input value={merchantPartyForm.address} onChange={(event) => setMerchantPartyForm((previous) => ({ ...previous, address: event.target.value }))} placeholder="Adres" className="rounded-xl border px-3 py-2" required />}
+                <div className="flex gap-2 md:col-span-2">
+                  <button type="submit" className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Bilgileri kaydet</button>
+                  <button type="button" onClick={() => setIsEditingMerchantParty(false)} className="rounded-xl border px-4 py-2 text-sm font-semibold">Vazgeç</button>
+                </div>
+              </form>
+            )}
             <div className="mt-5 grid gap-3 md:grid-cols-3">
               <div className="rounded-2xl bg-white p-4"><span className="text-sm text-slate-500">Satış sayısı</span><strong className="mt-1 block text-2xl">{selectedPartySales.length}</strong></div>
               <div className="rounded-2xl bg-white p-4"><span className="text-sm text-slate-500">Toplam tutar</span><strong className="mt-1 block text-2xl">₺{selectedPartySales.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0).toFixed(2)}</strong></div>
@@ -4170,6 +4360,14 @@ function App() {
                         </div>
                       )}
                       <p className="mt-2 text-xs text-slate-500">{[...(sale.items || []).map((item) => `${item.olive_type} / ${item.size}: ${Number(item.quantity_kg || 0).toFixed(2)} KG`), ...(sale.oil_items || []).map((item) => `Zeytinyağı: ${Number(item.liters || 0).toFixed(2)} L`)].join(" • ") || "Ürün bilgisi yok"}</p>
+                      <div className="mt-3 flex gap-3 border-t border-slate-100 pt-2">
+                        <button type="button" onClick={() => handleSaleEdit(sale)} className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700">
+                          <Pencil size={14} /> Satışı düzenle
+                        </button>
+                        <button type="button" onClick={() => handleSaleDelete(sale)} className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700">
+                          <Trash2 size={14} /> Satışı sil
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {!selectedPartySales.length && <p className="text-sm text-slate-500">Bu müşteriye ait satış yok.</p>}
@@ -4314,7 +4512,12 @@ function App() {
                 {(shipment.items || []).map((item) => <span key={item.id} className="rounded-full bg-slate-100 px-3 py-1">{item.product_type === "oil" ? `Zeytinyağı ${item.quantity} L` : `${item.olive_type} / ${item.size}: ${item.quantity} KG`}</span>)}
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <button type="button" onClick={() => startShipment(salesRecords.find((sale) => sale.id === shipment.sale?.id))} className="rounded-xl border px-3 py-2 text-sm font-semibold">Düzenle</button>
+                <button type="button" onClick={() => startShipment(salesRecords.find((sale) => sale.id === shipment.sale?.id))} className="inline-flex items-center gap-1 rounded-xl border px-3 py-2 text-sm font-semibold"><Pencil size={15} /> Düzenle</button>
+                {["Vardi", "AdreseUlasti"].includes(shipment.status) && (
+                  <button type="button" onClick={() => handleShipmentDelete(shipment)} className="inline-flex items-center gap-1 rounded-xl border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-700">
+                    <Trash2 size={15} /> Teslimatı sil
+                  </button>
+                )}
                 {shipment.status === "Yuklemede" && <button type="button" onClick={() => sendShipmentWhatsApp(shipment, "company", "Yolda")} className="rounded-xl bg-blue-700 px-3 py-2 text-xs font-semibold text-white">Firmaya: Yola çıktı</button>}
                 {shipment.status === "Yolda" && <button type="button" onClick={() => sendShipmentWhatsApp(shipment, "company", "AdreseUlasti")} className="rounded-xl bg-blue-700 px-3 py-2 text-xs font-semibold text-white">Firmaya: Teslimat adresine ulaştı</button>}
                 <button type="button" onClick={() => sendShipmentWhatsApp(shipment, "driver", "Yuklemede")} className="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-semibold text-white"><Truck className="mr-1 inline h-4 w-4" />Şoföre: Araç yüklendi</button>
@@ -4329,9 +4532,10 @@ function App() {
 
   /* Satışa zeytinyağı ekleme ve litre stok kontrolü */
   const renderSalesOilPanel = () => {
-    const oilPrice = Number(salesOilPrices[0]?.unit_price || 0);
+    const oilPrice = Number(saleBeingEdited?.oil_items?.[0]?.unit_price ?? salesOilPrices[0]?.unit_price ?? 0);
     const remainingOil = Math.max(
-      totalProducedOilLiters - totalSoldOilLiters,
+      totalProducedOilLiters - totalSoldOilLiters +
+        (saleBeingEdited?.oil_items || []).reduce((sum, item) => sum + Number(item.liters || 0), 0),
       0,
     );
     return (
@@ -7262,7 +7466,11 @@ function App() {
         </aside>
 
         <div className="flex-1">
+<<<<<<< Updated upstream
          <header className="rounded-[24px] border border-slate-200/80 bg-white/90 p-3 shadow-[0_18px_45px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:rounded-[28px] sm:p-4 lg:p-5">
+=======
+          <header className="rounded-[24px] border border-slate-200/80 bg-white/90 p-3 shadow-[0_18px_45px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:rounded-[28px] sm:p-4 lg:p-5">
+>>>>>>> Stashed changes
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">
@@ -7311,6 +7519,7 @@ function App() {
             </div>
           </header>
 
+<<<<<<< Updated upstream
 <div className="mt-3 space-y-2 lg:hidden">
   <div className="flex gap-1 overflow-x-auto rounded-2xl bg-[#0a2140] p-1">
     {[
@@ -7359,6 +7568,42 @@ function App() {
 </div>
 
 <main className="space-y-8 pt-6">
+=======
+          <div className="mt-3 space-y-2 lg:hidden">
+            <div className="flex gap-1 overflow-x-auto rounded-2xl bg-[#0a2140] p-1">
+              {[
+                ["producer", "Alış"],
+                ["merchant", "Satış"],
+              ].map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => {
+                    setBusinessMode(mode);
+                    setActiveTab(mode === "producer" ? "overview" : "merchant-overview");
+                  }}
+                  className={`min-w-[96px] flex-1 rounded-xl px-3 py-2 text-sm font-semibold ${businessMode === mode ? "bg-white text-[#0a2140]" : "text-blue-100"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Mobil menü">
+              {(businessMode === "producer" ? tabs : merchantTabs).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`shrink-0 rounded-xl border px-3 py-2 text-sm font-semibold ${activeTab === tab.id ? "border-blue-700 bg-blue-700 text-white" : "border-slate-200 bg-white text-slate-700"}`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          <main className="space-y-8 pt-6">
+>>>>>>> Stashed changes
             {canManagePurchases && businessMode === "producer" &&
               activeTab === "overview" &&
               renderOverview()}

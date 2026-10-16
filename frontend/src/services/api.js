@@ -54,6 +54,8 @@ export const updateSortingRecord = (id, data) => API.patch(`sorting-records/${id
 export const createCustomerPayment = (data) => API.post('customer-payments/', data);
 export const getMerchantParties = () => API.get('merchant-parties/');
 export const createMerchantParty = (data) => API.post('merchant-parties/', data);
+export const updateMerchantParty = (id, data) => API.patch(`merchant-parties/${id}/`, data);
+export const deleteMerchantParty = (id) => API.delete(`merchant-parties/${id}/`);
 export const getDrivers = () => API.get('drivers/');
 export const createDriver = (data) => API.post('drivers/', data);
 export const updateDriver = (id, data) => API.patch(`drivers/${id}/`, data);
@@ -65,6 +67,7 @@ export const deleteVehicle = (id) => API.delete(`vehicles/${id}/`);
 export const getSalesRecords = () => API.get('sales-records/');
 export const createSalesRecord = (data) => API.post('sales-records/', data);
 export const updateSalesRecord = (id, data) => API.patch(`sales-records/${id}/`, data);
+export const deleteSalesRecord = (id) => API.delete(`sales-records/${id}/`);
 export const createSalesPayment = (data) => API.post('sales-payments/', data);
 export const getSalesPrices = () => API.get('sales-prices/');
 export const createSalesPrice = (data) => API.post('sales-prices/', data);
@@ -79,6 +82,7 @@ export const deleteInventoryEntry = (id) => API.delete(`inventory-entries/${id}/
 export const getShipments = () => API.get('shipments/');
 export const createShipment = (data) => API.post('shipments/', data);
 export const updateShipment = (id, data) => API.put(`shipments/${id}/`, data);
+export const deleteShipment = (id) => API.delete(`shipments/${id}/`);
 export const patchShipment = (id, data) => API.patch(`shipments/${id}/`, data);
 
 export default API;

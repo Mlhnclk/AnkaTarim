@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.db import models
 from rest_framework import serializers
 from .models import (
@@ -191,6 +192,30 @@ class SalesRecordSerializer(CompanyScopedModelSerializer):
         record.whatsapp_message_content = record.whatsapp_message
         record.save(update_fields=['total_amount', 'whatsapp_message_content'])
         return record
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        items_data = validated_data.pop('items', None)
+        oil_items_data = validated_data.pop('oil_items', None)
+        instance = super().update(instance, validated_data)
+
+        if items_data is not None:
+            instance.items.all().delete()
+            for item_data in items_data:
+                SalesItem.objects.create(sale=instance, **item_data)
+
+        if oil_items_data is not None:
+            instance.oil_items.all().delete()
+            for item_data in oil_items_data:
+                SalesOilItem.objects.create(sale=instance, **item_data)
+
+        instance.total_amount = (
+            sum((item.line_total for item in instance.items.all()), Decimal('0.00'))
+            + sum((item.line_total for item in instance.oil_items.all()), Decimal('0.00'))
+        )
+        instance.whatsapp_message_content = instance.whatsapp_message
+        instance.save(update_fields=['total_amount', 'whatsapp_message_content'])
+        return instance
 
 
 class ShipmentItemSerializer(CompanyScopedModelSerializer):

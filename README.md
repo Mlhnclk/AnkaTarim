@@ -41,6 +41,7 @@ Copy-Item frontend\.env.example frontend\.env
 VITE_API_URL=http://127.0.0.1:8000/api/
 ```
 
+<<<<<<< Updated upstream
 ## Çok Şirketli Kullanım
 
 Her şirket aynı uygulama ve veritabanını kullanır; operasyon kayıtları oturum açan kullanıcının şirketine göre ayrılır. API şirketi kullanıcı profilinden belirlediği için frontend'den şirket kimliği göndermek gerekmez.
@@ -57,6 +58,8 @@ Yeni şirket eklemek için platform yöneticisi `/admin/` üzerinden:
 .venv\Scripts\python.exe backend\manage.py runserver 127.0.0.1:8000
 ```
 
+=======
+>>>>>>> Stashed changes
 ## Kontroller
 
 ```powershell
