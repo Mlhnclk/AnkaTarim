@@ -1901,7 +1901,10 @@ function App() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!selectedStationId) return;
+    if (!selectedStationId) {
+      window.alert("Kayıt oluşturmadan önce bir elek seçin.");
+      return;
+    }
 
     let whatsappPopup = openWhatsAppPopupWindow();
     setIsSubmitting(true);
@@ -2014,6 +2017,13 @@ function App() {
     } catch (error) {
       whatsappPopup?.close();
       console.error("Kayit olusturulamadı", error);
+      window.alert(
+        error.response?.data?.detail ||
+          (error.response?.data
+            ? JSON.stringify(error.response.data)
+            : error.message) ||
+          "Kayıt oluşturulamadı. Sunucu bağlantısını kontrol edin.",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -7140,12 +7150,22 @@ function App() {
               ))}
             </div>
 
+            {!selectedStationId && (
+              <p className="mt-6 text-sm text-amber-700">
+                Kayıt için bir elek seçin. Elek listesi boşsa Yönetim
+                ekranından elek ekleyin.
+              </p>
+            )}
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !selectedStationId}
               className="mt-8 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSubmitting ? "Kaydediliyor..." : "Kaydı Oluştur"}
+              {!selectedStationId
+                ? "Önce elek seçin"
+                : isSubmitting
+                  ? "Kaydediliyor..."
+                  : "Kaydı Oluştur"}
               <ArrowRight className="h-4 w-4" />
             </button>
           </form>
