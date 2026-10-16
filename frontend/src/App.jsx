@@ -7466,11 +7466,7 @@ function App() {
         </aside>
 
         <div className="flex-1">
-<<<<<<< Updated upstream
-         <header className="rounded-[24px] border border-slate-200/80 bg-white/90 p-3 shadow-[0_18px_45px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:rounded-[28px] sm:p-4 lg:p-5">
-=======
           <header className="rounded-[24px] border border-slate-200/80 bg-white/90 p-3 shadow-[0_18px_45px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:rounded-[28px] sm:p-4 lg:p-5">
->>>>>>> Stashed changes
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">
@@ -7519,57 +7515,6 @@ function App() {
             </div>
           </header>
 
-          </header>
-
-<div className="mt-3 space-y-2 lg:hidden">
-  <div className="flex gap-1 overflow-x-auto rounded-2xl bg-[#0a2140] p-1">
-    {[
-      ["producer", "Alış"],
-      ["merchant", "Satış"],
-    ].map(([mode, label]) => (
-      <button
-        key={mode}
-        type="button"
-        onClick={() => {
-          setBusinessMode(mode);
-          setActiveTab(
-            mode === "producer" ? "overview" : "merchant-overview",
-          );
-        }}
-        className={`min-w-[96px] flex-1 rounded-xl px-3 py-2 text-sm font-semibold ${
-          businessMode === mode
-            ? "bg-white text-[#0a2140]"
-            : "text-blue-100"
-        }`}
-      >
-        {label}
-      </button>
-    ))}
-  </div>
-
-  <nav
-    className="flex gap-2 overflow-x-auto pb-1"
-    aria-label="Mobil menü"
-  >
-    {(businessMode === "producer" ? tabs : merchantTabs).map((tab) => (
-      <button
-        key={tab.id}
-        type="button"
-        onClick={() => setActiveTab(tab.id)}
-        className={`shrink-0 rounded-xl border px-3 py-2 text-sm font-semibold ${
-          activeTab === tab.id
-            ? "border-blue-700 bg-blue-700 text-white"
-            : "border-slate-200 bg-white text-slate-700"
-        }`}
-      >
-        {tab.label}
-      </button>
-    ))}
-  </nav>
-</div>
-
-<main className="space-y-8 pt-6">
-=======
           <div className="mt-3 space-y-2 lg:hidden">
             <div className="flex gap-1 overflow-x-auto rounded-2xl bg-[#0a2140] p-1">
               {[
@@ -7604,7 +7549,6 @@ function App() {
           </div>
 
           <main className="space-y-8 pt-6">
->>>>>>> Stashed changes
             {canManagePurchases && businessMode === "producer" &&
               activeTab === "overview" &&
               renderOverview()}
