@@ -202,12 +202,12 @@ class SalesRecordSerializer(CompanyScopedModelSerializer):
         if items_data is not None:
             instance.items.all().delete()
             for item_data in items_data:
-                SalesItem.objects.create(sale=instance, **item_data)
+                SalesItem.objects.create(sale=instance, company=instance.company, **item_data)
 
         if oil_items_data is not None:
             instance.oil_items.all().delete()
             for item_data in oil_items_data:
-                SalesOilItem.objects.create(sale=instance, **item_data)
+                SalesOilItem.objects.create(sale=instance, company=instance.company, **item_data)
 
         instance.total_amount = (
             sum((item.line_total for item in instance.items.all()), Decimal('0.00'))
