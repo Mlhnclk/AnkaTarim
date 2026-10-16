@@ -3,7 +3,8 @@ from django.contrib.auth.models import User
 from rest_framework import status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, BasePermission
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import SAFE_METHODS, AllowAny, BasePermission
 from rest_framework.response import Response
 
 from .models import (
@@ -62,6 +63,9 @@ def login_view(request):
     user = authenticate(username=request.data.get('username', '').strip(), password=request.data.get('password', ''))
     if not user or not user.is_active:
         return Response({'detail': 'Kullanıcı adı veya şifre hatalı.'}, status=status.HTTP_400_BAD_REQUEST)
+    profile = getattr(user, 'app_profile', None)
+    if not user.is_superuser and (not profile or not profile.company.is_active):
+        return Response({'detail': 'Kullanıcı için aktif şirket tanımlı değil.'}, status=status.HTTP_403_FORBIDDEN)
     token, _ = Token.objects.get_or_create(user=user)
     return Response({'token': token.key, 'user': AppUserSerializer(user).data})
 
@@ -73,13 +77,23 @@ class UserManagementPermission(BasePermission):
         if request.user.is_superuser:
             return True
         profile = getattr(request.user, 'app_profile', None)
-        return bool(profile and profile.can_manage_users)
+        if not profile or not profile.company.is_active:
+            return False
+        return profile.can_manage_users
 
 
 class AppUserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by('username')
     serializer_class = AppUserSerializer
     permission_classes = [UserManagementPermission]
+
+    def get_queryset(self):
+        if self.request.user.is_superuser:
+            return User.objects.all().order_by('username')
+        profile = getattr(self.request.user, 'app_profile', None)
+        if not profile:
+            return User.objects.none()
+        return User.objects.filter(app_profile__company=profile.company).order_by('username')
 
     def update(self, request, *args, **kwargs):
         user = self.get_object()
@@ -101,17 +115,49 @@ class AppPermission(BasePermission):
         if request.user.is_superuser:
             return True
         profile = getattr(request.user, 'app_profile', None)
-        if not profile:
+        if not profile or not profile.company.is_active:
             return False
         if profile.can_manage_users:
             return True
-        permission_name = f'can_manage_{getattr(view, "permission_area", "")}'
+        permission_area = getattr(view, 'permission_area', '')
+        legacy_permissions = (
+            profile.can_create_records,
+            profile.can_edit_records,
+            profile.can_delete_records,
+        )
+        if permission_area == 'purchases' and any(legacy_permissions):
+            if request.method in SAFE_METHODS:
+                return True
+            if request.method == 'POST':
+                return profile.can_create_records
+            if request.method in ('PUT', 'PATCH'):
+                return profile.can_edit_records
+            if request.method == 'DELETE':
+                return profile.can_delete_records
+            return False
+
+        permission_name = f'can_manage_{permission_area}'
         return bool(getattr(profile, permission_name, False))
 
 
 # Korumalı tüm CRUD endpointleri için ortak temel sınıf
 class ProtectedModelViewSet(viewsets.ModelViewSet):
     permission_classes = [AppPermission]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.request.user.is_superuser:
+            return queryset
+        profile = getattr(self.request.user, 'app_profile', None)
+        if not profile:
+            return queryset.none()
+        return queryset.filter(company=profile.company)
+
+    def perform_create(self, serializer):
+        profile = getattr(self.request.user, 'app_profile', None)
+        if not profile:
+            raise PermissionDenied('Kullanıcıya şirket atanmamış.')
+        serializer.save(company=profile.company)
 
 
 class CustomerViewSet(ProtectedModelViewSet):
@@ -121,7 +167,7 @@ class CustomerViewSet(ProtectedModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         customer = self.get_object()
-        CustomerSortingRecord.objects.filter(customer=customer.full_name).delete()
+        CustomerSortingRecord.objects.filter(company=customer.company, customer=customer.full_name).delete()
         self.perform_destroy(customer)
         return Response(status=status.HTTP_204_NO_CONTENT)
 

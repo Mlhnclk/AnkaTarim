@@ -41,6 +41,17 @@ Copy-Item frontend\.env.example frontend\.env
 VITE_API_URL=http://127.0.0.1:8000/api/
 ```
 
+## Çok Şirketli Kullanım
+
+Her şirket aynı uygulama ve veritabanını kullanır; operasyon kayıtları oturum açan kullanıcının şirketine göre ayrılır. API şirketi kullanıcı profilinden belirlediği için frontend'den şirket kimliği göndermek gerekmez.
+
+Yeni şirket eklemek için platform yöneticisi `/admin/` üzerinden:
+
+1. `Core > Companies` bölümünde şirketi oluşturur.
+2. `Authentication and Authorization > Users` bölümünde şirketin ilk kullanıcısını oluşturur.
+3. `Core > App user profiles` bölümünde kullanıcıyı şirkete bağlar ve gerekli satın alma, satış ve kullanıcı yönetimi yetkilerini verir.
+
+Şirket yöneticileri uygulama içindeki kullanıcı yönetiminden yeni çalışan ekleyebilir; bu çalışanlar otomatik olarak yöneticinin şirketine bağlanır. Mevcut kayıtlar ve kullanıcı profilleri ilk migrasyonda `Anka Tarımsal Takip` şirketine atanır.
 
 ```powershell
 .venv\Scripts\python.exe backend\manage.py runserver 127.0.0.1:8000

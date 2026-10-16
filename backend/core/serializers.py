@@ -30,13 +30,27 @@ from .models import (
 )
 
 
+class CompanyScopedModelSerializer(serializers.ModelSerializer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        profile = getattr(getattr(request, 'user', None), 'app_profile', None)
+        company = getattr(profile, 'company', None)
+        for field in self.fields.values():
+            if field.field_name == 'company':
+                field.read_only = True
+            queryset = getattr(field, 'queryset', None)
+            if company and queryset is not None and hasattr(queryset.model, 'company'):
+                field.queryset = queryset.filter(company=company)
+
+
 # Üretici ve satış müşterisi API dönüşümleri
-class CustomerSerializer(serializers.ModelSerializer):
+class CustomerSerializer(CompanyScopedModelSerializer):
     oil_kg_per_liter = serializers.SerializerMethodField()
 
     def get_oil_kg_per_liter(self, obj):
         total_oil = sum(
-            (record.total_oil_amount for record in CustomerSortingRecord.objects.filter(customer=obj.full_name)),
+            (record.total_oil_amount for record in CustomerSortingRecord.objects.filter(company=obj.company, customer=obj.full_name)),
             Decimal('0.00'),
         )
         value = obj.oil_kg_per_liter(total_oil)
@@ -47,7 +61,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         fields = ['id', 'full_name', 'phone', 'address', 'notes', 'oil_process_status', 'oil_output_liters', 'oil_kg_per_liter', 'created_at']
 
 
-class MerchantPartySerializer(serializers.ModelSerializer):
+class MerchantPartySerializer(CompanyScopedModelSerializer):
     class Meta:
         model = MerchantParty
         fields = ['id', 'party_type', 'name', 'phone', 'address', 'created_at']
@@ -57,10 +71,11 @@ class MerchantPartySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'address': 'Kurumsal kayıt için adres gereklidir.'})
         name = attrs.get('name', '').strip()
         party_type = attrs.get('party_type')
-        duplicate_query = MerchantParty.objects.filter(
-            party_type=party_type,
-            name__iexact=name,
-        )
+        duplicate_query = MerchantParty.objects.filter(party_type=party_type, name__iexact=name)
+        request = self.context.get('request')
+        profile = getattr(getattr(request, 'user', None), 'app_profile', None)
+        if profile:
+            duplicate_query = duplicate_query.filter(company=profile.company)
         if self.instance:
             duplicate_query = duplicate_query.exclude(pk=self.instance.pk)
         if name and duplicate_query.exists():
@@ -69,13 +84,13 @@ class MerchantPartySerializer(serializers.ModelSerializer):
 
 
 # Araç atamasında kullanılan şoför/personel verisi
-class DriverSerializer(serializers.ModelSerializer):
+class DriverSerializer(CompanyScopedModelSerializer):
     class Meta:
         model = Driver
         fields = ['id', 'full_name', 'phone', 'status', 'created_at']
 
 
-class VehicleSerializer(serializers.ModelSerializer):
+class VehicleSerializer(CompanyScopedModelSerializer):
     driver_detail = DriverSerializer(source='driver', read_only=True)
 
     class Meta:
@@ -84,7 +99,7 @@ class VehicleSerializer(serializers.ModelSerializer):
 
 
 # Satış ödeme hareketlerinin API formatı
-class SalesPaymentSerializer(serializers.ModelSerializer):
+class SalesPaymentSerializer(CompanyScopedModelSerializer):
     def validate(self, attrs):
         amount = attrs.get('amount')
         sale = attrs.get('sale')
@@ -99,7 +114,7 @@ class SalesPaymentSerializer(serializers.ModelSerializer):
         fields = ['id', 'sale', 'payment_date', 'amount', 'note', 'created_at']
 
 
-class SalesItemSerializer(serializers.ModelSerializer):
+class SalesItemSerializer(CompanyScopedModelSerializer):
     line_total = serializers.ReadOnlyField()
 
     class Meta:
@@ -107,13 +122,13 @@ class SalesItemSerializer(serializers.ModelSerializer):
         fields = ['id', 'olive_type', 'size', 'quantity_kg', 'unit_price', 'oil_release', 'line_total']
 
 
-class SalesPriceSerializer(serializers.ModelSerializer):
+class SalesPriceSerializer(CompanyScopedModelSerializer):
     class Meta:
         model = SalesPrice
         fields = '__all__'
 
 
-class SalesOilItemSerializer(serializers.ModelSerializer):
+class SalesOilItemSerializer(CompanyScopedModelSerializer):
     line_total = serializers.ReadOnlyField()
 
     class Meta:
@@ -121,14 +136,14 @@ class SalesOilItemSerializer(serializers.ModelSerializer):
         fields = ['id', 'liters', 'unit_price', 'line_total']
 
 
-class SalesOilPriceSerializer(serializers.ModelSerializer):
+class SalesOilPriceSerializer(CompanyScopedModelSerializer):
     class Meta:
         model = SalesOilPrice
         fields = '__all__'
 
 
 # Envanter girişlerinde ürün tipine göre alan doğrulaması
-class InventoryEntrySerializer(serializers.ModelSerializer):
+class InventoryEntrySerializer(CompanyScopedModelSerializer):
     class Meta:
         model = InventoryEntry
         fields = ['id', 'product_type', 'olive_type', 'size', 'quantity', 'note', 'created_at']
@@ -143,7 +158,7 @@ class InventoryEntrySerializer(serializers.ModelSerializer):
 
 
 # Satış başlığını, kalemlerini ve araç/şoför bağlantılarını birlikte işler
-class SalesRecordSerializer(serializers.ModelSerializer):
+class SalesRecordSerializer(CompanyScopedModelSerializer):
     total_paid = serializers.ReadOnlyField()
     remaining_amount = serializers.ReadOnlyField()
     whatsapp_message = serializers.ReadOnlyField()
@@ -166,19 +181,19 @@ class SalesRecordSerializer(serializers.ModelSerializer):
         items_data = validated_data.pop('items', [])
         oil_items_data = validated_data.pop('oil_items', [])
         if not validated_data.get('sale_no'):
-            validated_data['sale_no'] = (SalesRecord.objects.aggregate(max_no=models.Max('sale_no'))['max_no'] or 0) + 1
+            validated_data['sale_no'] = (SalesRecord.objects.filter(company=validated_data['company']).aggregate(max_no=models.Max('sale_no'))['max_no'] or 0) + 1
         record = SalesRecord.objects.create(**validated_data)
         for item_data in items_data:
-            SalesItem.objects.create(sale=record, **item_data)
+            SalesItem.objects.create(sale=record, company=record.company, **item_data)
         for item_data in oil_items_data:
-            SalesOilItem.objects.create(sale=record, **item_data)
+            SalesOilItem.objects.create(sale=record, company=record.company, **item_data)
         record.total_amount = sum((item.line_total for item in record.items.all()), Decimal('0.00')) + sum((item.line_total for item in record.oil_items.all()), Decimal('0.00'))
         record.whatsapp_message_content = record.whatsapp_message
         record.save(update_fields=['total_amount', 'whatsapp_message_content'])
         return record
 
 
-class ShipmentItemSerializer(serializers.ModelSerializer):
+class ShipmentItemSerializer(CompanyScopedModelSerializer):
     class Meta:
         model = ShipmentItem
         fields = ['id', 'product_type', 'olive_type', 'size', 'quantity', 'is_loaded']
@@ -194,7 +209,7 @@ class ShipmentItemSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class ShipmentSerializer(serializers.ModelSerializer):
+class ShipmentSerializer(CompanyScopedModelSerializer):
     sale = SalesRecordSerializer(read_only=True)
     sale_id = serializers.PrimaryKeyRelatedField(source='sale', queryset=SalesRecord.objects.select_related('party'), write_only=True)
     party = MerchantPartySerializer(source='sale.party', read_only=True)
@@ -226,7 +241,10 @@ class ShipmentSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         items_data = validated_data.pop('items', [])
         shipment = Shipment.objects.create(**validated_data)
-        ShipmentItem.objects.bulk_create([ShipmentItem(shipment=shipment, **item) for item in items_data])
+        ShipmentItem.objects.bulk_create([
+            ShipmentItem(shipment=shipment, company=shipment.company, **item)
+            for item in items_data
+        ])
         return shipment
 
     def update(self, instance, validated_data):
@@ -234,17 +252,20 @@ class ShipmentSerializer(serializers.ModelSerializer):
         instance = super().update(instance, validated_data)
         if items_data is not None:
             instance.items.all().delete()
-            ShipmentItem.objects.bulk_create([ShipmentItem(shipment=instance, **item) for item in items_data])
+            ShipmentItem.objects.bulk_create([
+                ShipmentItem(shipment=instance, company=instance.company, **item)
+                for item in items_data
+            ])
         return instance
 
 
-class OliveBatchSerializer(serializers.ModelSerializer):
+class OliveBatchSerializer(CompanyScopedModelSerializer):
     class Meta:
         model = OliveBatch
         fields = '__all__'
 
 
-class StorageTankSerializer(serializers.ModelSerializer):
+class StorageTankSerializer(CompanyScopedModelSerializer):
     fill_rate = serializers.ReadOnlyField()
 
     class Meta:
@@ -254,13 +275,35 @@ class StorageTankSerializer(serializers.ModelSerializer):
 
 class AppUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
-    can_manage_purchases = serializers.BooleanField(source='app_profile.can_manage_purchases', required=False)
-    can_manage_sales = serializers.BooleanField(source='app_profile.can_manage_sales', required=False)
-    can_manage_users = serializers.BooleanField(source='app_profile.can_manage_users', required=False)
+    company_id = serializers.SerializerMethodField()
+    can_manage_purchases = serializers.BooleanField(source='app_profile.can_manage_purchases', required=False, default=False)
+    can_manage_sales = serializers.BooleanField(source='app_profile.can_manage_sales', required=False, default=False)
+    can_manage_users = serializers.BooleanField(source='app_profile.can_manage_users', required=False, default=False)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'first_name', 'last_name', 'is_active', 'is_staff', 'is_superuser', 'password', 'can_manage_purchases', 'can_manage_sales', 'can_manage_users']
+        fields = ['id', 'username', 'first_name', 'last_name', 'is_active', 'is_staff', 'is_superuser', 'password', 'company_id', 'can_manage_purchases', 'can_manage_sales', 'can_manage_users']
+
+    def get_company_id(self, obj):
+        profile = getattr(obj, 'app_profile', None)
+        return profile.company_id if profile else None
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        if not getattr(instance, 'app_profile', None):
+            representation.update({
+                'can_manage_purchases': False,
+                'can_manage_sales': False,
+                'can_manage_users': False,
+            })
+        return representation
+
+    def _request_company(self):
+        request = self.context.get('request')
+        profile = getattr(getattr(request, 'user', None), 'app_profile', None)
+        if not profile or not profile.company.is_active:
+            raise serializers.ValidationError('Kullanıcı için aktif şirket tanımlı değil.')
+        return profile.company
 
     def validate(self, attrs):
         if attrs.get('is_superuser'):
@@ -271,6 +314,7 @@ class AppUserSerializer(serializers.ModelSerializer):
         profile_data = validated_data.pop('app_profile', {})
         password = validated_data.pop('password', None)
         user = User.objects.create_user(password=password, **validated_data)
+        profile_data['company'] = self._request_company()
         AppUserProfile.objects.update_or_create(user=user, defaults=profile_data)
         return user
 
@@ -282,11 +326,16 @@ class AppUserSerializer(serializers.ModelSerializer):
         if password:
             instance.set_password(password)
         instance.save()
+        current_profile = getattr(instance, 'app_profile', None)
+        if current_profile:
+            profile_data.setdefault('company', current_profile.company)
+        else:
+            profile_data['company'] = self._request_company()
         AppUserProfile.objects.update_or_create(user=instance, defaults=profile_data)
         return instance
 
 
-class ResponsiblePersonSerializer(serializers.ModelSerializer):
+class ResponsiblePersonSerializer(CompanyScopedModelSerializer):
     total_commission = serializers.ReadOnlyField()
     total_commission_paid = serializers.ReadOnlyField()
     remaining_commission = serializers.ReadOnlyField()
@@ -300,7 +349,7 @@ class ResponsiblePersonSerializer(serializers.ModelSerializer):
         fields = ['id', 'full_name', 'phone', 'status', 'total_commission', 'total_commission_paid', 'remaining_commission', 'commission_payments', 'created_at']
 
 
-class ResponsiblePersonPaymentSerializer(serializers.ModelSerializer):
+class ResponsiblePersonPaymentSerializer(CompanyScopedModelSerializer):
     def validate(self, attrs):
         amount = attrs.get('amount')
         person = attrs.get('person') or getattr(self.instance, 'person', None)
@@ -318,7 +367,7 @@ class ResponsiblePersonPaymentSerializer(serializers.ModelSerializer):
         fields = ['id', 'person', 'payment_date', 'amount', 'note', 'created_at']
 
 
-class SieveStationSerializer(serializers.ModelSerializer):
+class SieveStationSerializer(CompanyScopedModelSerializer):
     responsible_persons = ResponsiblePersonSerializer(many=True, read_only=True)
     responsible_person_ids = serializers.PrimaryKeyRelatedField(
         many=True,
@@ -344,7 +393,7 @@ class SieveStationSerializer(serializers.ModelSerializer):
         ]
 
 
-class OlivePriceSerializer(serializers.ModelSerializer):
+class OlivePriceSerializer(CompanyScopedModelSerializer):
     price_per_kg = serializers.ReadOnlyField()
 
     class Meta:
@@ -363,7 +412,7 @@ class OlivePriceSerializer(serializers.ModelSerializer):
         ]
 
 
-class CustomerPaymentSerializer(serializers.ModelSerializer):
+class CustomerPaymentSerializer(CompanyScopedModelSerializer):
     def validate(self, attrs):
         amount = attrs.get('amount')
         record = attrs.get('record') or getattr(self.instance, 'record', None)
@@ -381,7 +430,7 @@ class CustomerPaymentSerializer(serializers.ModelSerializer):
         fields = ['id', 'record', 'payment_date', 'amount', 'note', 'created_at']
 
 
-class CustomerSortingItemSerializer(serializers.ModelSerializer):
+class CustomerSortingItemSerializer(CompanyScopedModelSerializer):
     oil_release = serializers.CharField()
     unit_price = serializers.ReadOnlyField()
     oil_amount = serializers.ReadOnlyField()
@@ -415,7 +464,7 @@ class CustomerSortingItemSerializer(serializers.ModelSerializer):
         ]
 
 
-class CustomerSortingRecordSerializer(serializers.ModelSerializer):
+class CustomerSortingRecordSerializer(CompanyScopedModelSerializer):
     total_weight = serializers.ReadOnlyField()
     total_amount = serializers.ReadOnlyField()
     effective_purchase_amount = serializers.ReadOnlyField()
@@ -475,7 +524,7 @@ class CustomerSortingRecordSerializer(serializers.ModelSerializer):
 
         for item_data in items_data:
             olive_type = item_data.get('olive_type')
-            pricing = OlivePrice.objects.filter(olive_type=olive_type).first()
+            pricing = OlivePrice.objects.filter(company=record.company, olive_type=olive_type).first()
 
             for size in range(11, 18):
                 size_field = f'size_{size}'
@@ -495,16 +544,16 @@ class CustomerSortingRecordSerializer(serializers.ModelSerializer):
                 else:
                     item_data[price_field] = Decimal('0.00')
 
-            CustomerSortingItem.objects.create(record=record, **item_data)
+            CustomerSortingItem.objects.create(record=record, company=record.company, **item_data)
 
         if payments_data:
             for payment_data in payments_data:
-                CustomerPayment.objects.create(record=record, **payment_data)
+                CustomerPayment.objects.create(record=record, company=record.company, **payment_data)
             total_paid = sum((Decimal(str(payment['amount'])) for payment in payments_data), Decimal('0.00'))
             record.paid_amount = total_paid
             record.save(update_fields=['paid_amount'])
         elif record.paid_amount:
-            CustomerPayment.objects.create(record=record, payment_date=date_value, amount=record.paid_amount)
+            CustomerPayment.objects.create(record=record, company=record.company, payment_date=date_value, amount=record.paid_amount)
 
         record.whatsapp_message_content = record.whatsapp_message
         record.save(update_fields=['whatsapp_message_content'])

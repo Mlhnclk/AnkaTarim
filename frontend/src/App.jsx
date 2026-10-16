@@ -82,17 +82,6 @@ const defaultItem = (oliveType = "Ayvalık") => ({
   oil_release: "11-12",
 });
 
-const defaultStation = {
-  name: "Yapıntı Elek 1",
-  responsible: "Muhammet Erikçi",
-  phone: "+905325323232",
-  commission_per_kg: 2,
-  status: "Aktif",
-  commission_basis: "kg",
-  commission_scope: "total_weight",
-  work_dates: ["2026-10-24", "2026-10-25"],
-};
-
 const defaultPrices = [
   {
     olive_type: "Ayvalık",
@@ -593,11 +582,6 @@ function App() {
       let personData = personsRes.data || [];
       let priceData = pricesRes.data || [];
       let salesPriceData = salesPricesRes.data || [];
-
-      if (seedDefaults && canAccessPurchases && !stationData.length) {
-        const createdStation = await createSieveStation(defaultStation);
-        stationData = [createdStation.data];
-      }
 
       if (seedDefaults && canAccessPurchases && !priceData.length) {
         const createdPrices = await Promise.all(
@@ -7325,8 +7309,6 @@ function App() {
                 </button>
               </div>
             </div>
-          </header>
-
           </header>
 
 <div className="mt-3 space-y-2 lg:hidden">

@@ -5,14 +5,41 @@ from django.contrib.auth.models import User
 from django.db import models
 
 
+class Company(models.Model):
+    name = models.CharField(max_length=160)
+    slug = models.SlugField(max_length=180, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class CompanyOwnedModel(models.Model):
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.PROTECT,
+        related_name='%(app_label)s_%(class)s_records',
+    )
+
+    class Meta:
+        abstract = True
+
+
 # Üretim, kullanıcı ve depo temel modelleri
-class OliveBatch(models.Model):
-    batch_no = models.CharField(max_length=20, unique=True)
+class OliveBatch(CompanyOwnedModel):
+    batch_no = models.CharField(max_length=20)
     producer = models.CharField(max_length=100)
     olive_type = models.CharField(max_length=50)
     weight_kg = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=50, default='Kabul Edildi')
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['company', 'batch_no'], name='uniq_batch_company_no')]
 
     def __str__(self):
         return f"{self.batch_no} - {self.producer}"
@@ -20,6 +47,7 @@ class OliveBatch(models.Model):
 
 class AppUserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='app_profile')
+    company = models.ForeignKey(Company, on_delete=models.PROTECT, related_name='user_profiles')
     can_create_records = models.BooleanField(default=False)
     can_edit_records = models.BooleanField(default=False)
     can_delete_records = models.BooleanField(default=False)
@@ -31,11 +59,14 @@ class AppUserProfile(models.Model):
         return self.user.username
 
 
-class StorageTank(models.Model):
-    tank_code = models.CharField(max_length=10, unique=True)
+class StorageTank(CompanyOwnedModel):
+    tank_code = models.CharField(max_length=10)
     capacity_liters = models.IntegerField()
     current_liters = models.IntegerField(default=0)
     oil_type = models.CharField(max_length=100)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['company', 'tank_code'], name='uniq_tank_company_code')]
 
     @property
     def fill_rate(self):
@@ -48,7 +79,7 @@ class StorageTank(models.Model):
 
 
 # Üretici ve zeytinyağı işlem süreci
-class Customer(models.Model):
+class Customer(CompanyOwnedModel):
     OIL_PROCESS_STATUS_CHOICES = [
         ('Beklemede', 'Beklemede'),
         ('Sıkımda', 'Sıkımda'),
@@ -76,7 +107,7 @@ class Customer(models.Model):
 
 
 # Satış müşterisi, araç ve şoför kayıtları
-class MerchantParty(models.Model):
+class MerchantParty(CompanyOwnedModel):
     PARTY_TYPE_CHOICES = [('individual', 'Bireysel'), ('corporate', 'Kurumsal')]
 
     party_type = models.CharField(max_length=20, choices=PARTY_TYPE_CHOICES)
@@ -92,7 +123,7 @@ class MerchantParty(models.Model):
         return self.name
 
 
-class Driver(models.Model):
+class Driver(CompanyOwnedModel):
     full_name = models.CharField(max_length=120)
     phone = models.CharField(max_length=20, blank=True, default='')
     status = models.CharField(max_length=20, default='Aktif')
@@ -105,20 +136,21 @@ class Driver(models.Model):
         return self.full_name
 
 
-class Vehicle(models.Model):
-    plate = models.CharField(max_length=20, unique=True)
+class Vehicle(CompanyOwnedModel):
+    plate = models.CharField(max_length=20)
     driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name='vehicles')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['plate']
+        constraints = [models.UniqueConstraint(fields=['company', 'plate'], name='uniq_vehicle_company_plate')]
 
     def __str__(self):
         return self.plate
 
 
 # Satış başlığı; zeytin, yağ, araç ve ödeme ilişkilerini taşır
-class SalesRecord(models.Model):
+class SalesRecord(CompanyOwnedModel):
     party = models.ForeignKey(MerchantParty, on_delete=models.PROTECT, related_name='sales')
     vehicle = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True, related_name='sales')
     driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True, related_name='sales')
@@ -168,10 +200,11 @@ class SalesRecord(models.Model):
 
     class Meta:
         ordering = ['-sale_date', '-id']
+        constraints = [models.UniqueConstraint(fields=['company', 'sale_no'], name='uniq_sale_company_no')]
 
 
 # Satışa ait ek ödeme hareketleri
-class SalesPayment(models.Model):
+class SalesPayment(CompanyOwnedModel):
     sale = models.ForeignKey(SalesRecord, on_delete=models.CASCADE, related_name='payments')
     payment_date = models.DateField()
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
@@ -183,8 +216,8 @@ class SalesPayment(models.Model):
 
 
 # Satış ekranında kullanılan cins ve numara fiyatları
-class SalesPrice(models.Model):
-    olive_type = models.CharField(max_length=50, unique=True)
+class SalesPrice(CompanyOwnedModel):
+    olive_type = models.CharField(max_length=50)
     size_11 = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     size_12 = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     size_13 = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
@@ -193,8 +226,11 @@ class SalesPrice(models.Model):
     size_16 = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     size_17 = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
 
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['company', 'olive_type'], name='uniq_salesprice_company_type')]
 
-class SalesItem(models.Model):
+
+class SalesItem(CompanyOwnedModel):
     sale = models.ForeignKey(SalesRecord, on_delete=models.CASCADE, related_name='items')
     olive_type = models.CharField(max_length=50)
     size = models.PositiveSmallIntegerField()
@@ -207,11 +243,11 @@ class SalesItem(models.Model):
         return self.quantity_kg * self.unit_price
 
 
-class SalesOilPrice(models.Model):
+class SalesOilPrice(CompanyOwnedModel):
     unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
 
 
-class SalesOilItem(models.Model):
+class SalesOilItem(CompanyOwnedModel):
     sale = models.ForeignKey(SalesRecord, on_delete=models.CASCADE, related_name='oil_items')
     liters = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
@@ -221,7 +257,7 @@ class SalesOilItem(models.Model):
         return self.liters * self.unit_price
 
 
-class Shipment(models.Model):
+class Shipment(CompanyOwnedModel):
     STATUS_CHOICES = [
         ('Yuklemede', 'Yüklemede'),
         ('Yolda', 'Yolda'),
@@ -245,7 +281,7 @@ class Shipment(models.Model):
         return f'Gönderim #{self.sale.sale_no}'
 
 
-class ShipmentItem(models.Model):
+class ShipmentItem(CompanyOwnedModel):
     PRODUCT_TYPE_CHOICES = [('olive', 'Zeytin'), ('oil', 'Zeytinyağı')]
 
     shipment = models.ForeignKey(Shipment, on_delete=models.CASCADE, related_name='items')
@@ -260,7 +296,7 @@ class ShipmentItem(models.Model):
 
 
 # Manuel zeytin ve zeytinyağı stok girişleri
-class InventoryEntry(models.Model):
+class InventoryEntry(CompanyOwnedModel):
     PRODUCT_TYPE_CHOICES = [('olive', 'Zeytin'), ('oil', 'Zeytinyağı')]
 
     product_type = models.CharField(max_length=10, choices=PRODUCT_TYPE_CHOICES)
@@ -274,7 +310,7 @@ class InventoryEntry(models.Model):
         ordering = ['-created_at', '-id']
 
 
-class ResponsiblePerson(models.Model):
+class ResponsiblePerson(CompanyOwnedModel):
     STATUS_CHOICES = [
         ('Aktif', 'Aktif'),
         ('Pasif', 'Pasif'),
@@ -304,7 +340,7 @@ class ResponsiblePerson(models.Model):
         return max(self.total_commission - self.total_commission_paid, Decimal('0.00'))
 
 
-class ResponsiblePersonPayment(models.Model):
+class ResponsiblePersonPayment(CompanyOwnedModel):
     person = models.ForeignKey(ResponsiblePerson, on_delete=models.CASCADE, related_name='commission_payments')
     payment_date = models.DateField()
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
@@ -318,7 +354,7 @@ class ResponsiblePersonPayment(models.Model):
         return f"{self.person.full_name} - {self.amount} TL"
 
 
-class SieveStation(models.Model):
+class SieveStation(CompanyOwnedModel):
     STATUS_CHOICES = [
         ('Aktif', 'Aktif'),
         ('Pasif', 'Pasif'),
@@ -350,8 +386,8 @@ class SieveStation(models.Model):
         return self.name
 
 
-class OlivePrice(models.Model):
-    olive_type = models.CharField(max_length=50, unique=True)
+class OlivePrice(CompanyOwnedModel):
+    olive_type = models.CharField(max_length=50)
     size_11 = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     size_12 = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     size_13 = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
@@ -359,6 +395,9 @@ class OlivePrice(models.Model):
     size_15 = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     size_16 = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
     size_17 = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['company', 'olive_type'], name='uniq_oliveprice_company_type')]
 
     @property
     def price_per_kg(self):
@@ -372,7 +411,7 @@ class OlivePrice(models.Model):
         return f"{self.olive_type} - {self.size_13} TL/kg"
 
 
-class CustomerPayment(models.Model):
+class CustomerPayment(CompanyOwnedModel):
     record = models.ForeignKey('CustomerSortingRecord', on_delete=models.CASCADE, related_name='payments')
     payment_date = models.DateField()
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
@@ -386,7 +425,7 @@ class CustomerPayment(models.Model):
         return f"{self.record.customer} - {self.payment_date} - {self.amount} TL"
 
 
-class CustomerSortingRecord(models.Model):
+class CustomerSortingRecord(CompanyOwnedModel):
     WHATSAPP_STATUS_CHOICES = [
         ('Bekliyor', 'Bekliyor'),
         ('Gönderildi', 'Gönderildi'),
@@ -410,7 +449,11 @@ class CustomerSortingRecord(models.Model):
 
     @classmethod
     def next_sequence_for_station(cls, sieve_station, date_value):
-        queryset = cls.objects.filter(sieve_station=sieve_station, date=date_value)
+        queryset = cls.objects.filter(
+            company=sieve_station.company,
+            sieve_station=sieve_station,
+            date=date_value,
+        )
         if not queryset.exists():
             return 1
         return queryset.aggregate(models.Max('sequence_no'))['sequence_no__max'] + 1
@@ -447,7 +490,10 @@ class CustomerSortingRecord(models.Model):
 
     @property
     def previous_balance(self):
-        prior_records = CustomerSortingRecord.objects.filter(customer=self.customer).filter(
+        prior_records = CustomerSortingRecord.objects.filter(
+            company=self.company,
+            customer=self.customer,
+        ).filter(
             models.Q(date__lt=self.date) | (models.Q(date=self.date) & models.Q(id__lt=self.id))
         )
         return sum((record.remaining_amount for record in prior_records), Decimal('0.00'))
@@ -516,7 +562,7 @@ class CustomerSortingRecord(models.Model):
                     )
             lines.append('')
         lines.append(f"Toplam Yağlık: {format_number(self.total_oil_amount)} KG")
-        customer = Customer.objects.filter(full_name=self.customer).first()
+        customer = Customer.objects.filter(company=self.company, full_name=self.customer).first()
         if customer:
             lines.append(f"Yağlık işlem durumu: {customer.get_oil_process_status_display()}")
             if customer.oil_output_liters:
@@ -537,7 +583,7 @@ class CustomerSortingRecord(models.Model):
         return f"{self.customer} - {self.sequence_no}"
 
 
-class CustomerSortingItem(models.Model):
+class CustomerSortingItem(CompanyOwnedModel):
     record = models.ForeignKey(CustomerSortingRecord, on_delete=models.CASCADE, related_name='items')
     olive_type = models.CharField(max_length=50)
     size_11 = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
@@ -594,7 +640,7 @@ class CustomerSortingItem(models.Model):
         if snapshot is not None:
             return snapshot
 
-        price = OlivePrice.objects.filter(olive_type=self.olive_type).first()
+        price = OlivePrice.objects.filter(company=self.company, olive_type=self.olive_type).first()
         if not price:
             return Decimal('0.00')
         return price.price_for_size(size)
