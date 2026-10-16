@@ -243,6 +243,26 @@ const normalizeWhatsAppPhone = (phone) => {
   if (digits.startsWith("0")) return `90${digits.slice(1)}`;
   return digits;
 };
+const openWhatsAppPopupWindow = () =>
+  window.open(
+    "about:blank",
+    "_blank",
+    "popup=yes,width=560,height=760,resizable=yes,scrollbars=yes",
+  );
+
+const openWhatsAppMessage = (phone, message, popupWindow = null) => {
+  const whatsappWindow = popupWindow || openWhatsAppPopupWindow();
+  if (!whatsappWindow) {
+    window.alert(
+      "WhatsApp penceresi açılamadı. Tarayıcıda açılır pencerelere izin verin.",
+    );
+    return false;
+  }
+  whatsappWindow.opener = null;
+  whatsappWindow.location.href = `https://wa.me/${normalizeWhatsAppPhone(phone)}?text=${encodeURIComponent(message)}`;
+  whatsappWindow.focus();
+  return true;
+};
 
 const formatTurkishPhone = (phone) => {
   const digits = String(phone || "").replace(/\D/g, "");
@@ -1047,23 +1067,13 @@ function App() {
     document.body.appendChild(frame);
   };
 
-  const sendWhatsApp = async (record, phone = "") => {
+  const sendWhatsApp = async (record, phone = "", popupWindow = null) => {
     const messageText =
       record.whatsapp_message ||
       record.whatsapp_message_content ||
       previewMessage ||
       "Zeytin takip bilgisi";
-    const text = encodeURIComponent(
-      messageText || previewMessage || "Zeytin takip bilgisi",
-    );
-    const normalizedPhone = normalizeWhatsAppPhone(phone);
-    const whatsappUrl = `https://wa.me/${normalizedPhone}?text=${text}`;
-    const whatsappWindow = window.open(
-      whatsappUrl,
-      "_blank",
-      "noopener,noreferrer",
-    );
-    if (!whatsappWindow) window.location.assign(whatsappUrl);
+    if (!openWhatsAppMessage(phone, messageText, popupWindow)) return;
     const update = {
       whatsapp_status: "Gönderildi",
       whatsapp_sent_at: new Date().toISOString(),
@@ -1158,6 +1168,7 @@ function App() {
   };
 
   const sendProcessWhatsApp = async (customer, processStatus) => {
+    const whatsappPopup = openWhatsAppPopupWindow();
     let message;
     let updatedCustomer = customer;
     const customerPayload = {
@@ -1194,9 +1205,13 @@ function App() {
         "Çıkan zeytinyağı miktarını litre olarak girin:",
         defaultLiters,
       );
-      if (litersInput === null) return;
+      if (litersInput === null) {
+        whatsappPopup?.close();
+        return;
+      }
       const liters = Number(String(litersInput).replace(",", "."));
       if (!Number.isFinite(liters) || liters <= 0) {
+        whatsappPopup?.close();
         window.alert("Geçerli bir litre miktarı girin.");
         return;
       }
@@ -1214,13 +1229,7 @@ function App() {
         item.id === updatedCustomer.id ? updatedCustomer : item,
       ),
     );
-    const phone = normalizeWhatsAppPhone(customer.phone);
-    const text = encodeURIComponent(message);
-    window.open(
-      `https://wa.me/${phone}?text=${text}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    openWhatsAppMessage(customer.phone, message, whatsappPopup);
     await refreshData();
   };
 
@@ -1894,6 +1903,7 @@ function App() {
     event.preventDefault();
     if (!selectedStationId) return;
 
+    let whatsappPopup = openWhatsAppPopupWindow();
     setIsSubmitting(true);
     try {
       const nextSequence = getNextSequenceForStation(
@@ -1982,7 +1992,8 @@ function App() {
             : producer,
         ),
       );
-      await sendWhatsApp(response.data, customer?.phone);
+      await sendWhatsApp(response.data, customer?.phone, whatsappPopup);
+      whatsappPopup = null;
       const nextDateTime = getComputerDateTime();
       setDateInput(formatDateInput(nextDateTime.date));
       setTimeInput(nextDateTime.time);
@@ -2001,6 +2012,7 @@ function App() {
       setSelectedStationId(String(response.data.sieve_station));
       setActiveProducerKey("");
     } catch (error) {
+      whatsappPopup?.close();
       console.error("Kayit olusturulamadı", error);
     } finally {
       setIsSubmitting(false);
@@ -2455,12 +2467,7 @@ function App() {
   const sendSaleWhatsApp = async (sale) => {
     const message =
       sale.whatsapp_message || sale.whatsapp_message_content || "Satış bilgisi";
-    const phone = normalizeWhatsAppPhone(sale.party?.phone);
-    window.open(
-      `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    if (!openWhatsAppMessage(sale.party?.phone, message)) return;
     try {
       const response = await updateSalesRecord(sale.id, {
         whatsapp_status: "Gönderildi",
@@ -2574,7 +2581,7 @@ function App() {
       "Yüklenen ürünler:",
       ...itemLines,
     ].join("\n");
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+    if (!openWhatsAppMessage(phone, message)) return;
     if (recipient === "company" && status !== shipment.status) {
       try {
         const response = await patchShipment(shipment.id, { status });

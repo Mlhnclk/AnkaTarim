@@ -88,9 +88,9 @@ class AppUserViewSet(viewsets.ModelViewSet):
     permission_classes = [UserManagementPermission]
 
     def get_queryset(self):
-        if self.request.user.is_superuser:
-            return User.objects.all().order_by('username')
         profile = getattr(self.request.user, 'app_profile', None)
+        if self.request.user.is_superuser and not profile:
+            return User.objects.all().order_by('username')
         if not profile:
             return User.objects.none()
         return User.objects.filter(app_profile__company=profile.company).order_by('username')
@@ -146,9 +146,9 @@ class ProtectedModelViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        if self.request.user.is_superuser:
-            return queryset
         profile = getattr(self.request.user, 'app_profile', None)
+        if self.request.user.is_superuser and not profile:
+            return queryset
         if not profile:
             return queryset.none()
         return queryset.filter(company=profile.company)

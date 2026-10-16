@@ -209,6 +209,46 @@ class CompanyTenantIsolationTest(CompanyTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(SalesRecord.objects.exists())
 
+    def test_company_assigned_superuser_is_scoped_to_its_company(self):
+        company_admin = User.objects.create_superuser(
+            username='company-root',
+            password='test-pass',
+        )
+        AppUserProfile.objects.create(user=company_admin, company=self.company)
+        other_company_user = User.objects.create_user(
+            username='other-company-user',
+            password='test-pass',
+        )
+        AppUserProfile.objects.create(
+            user=other_company_user,
+            company=self.other_company,
+        )
+        token = Token.objects.create(user=company_admin)
+        headers = {'HTTP_AUTHORIZATION': f'Token {token.key}'}
+
+        customers_response = self.client.get('/api/customers/', **headers)
+        update_response = self.client.patch(
+            f'/api/customers/{self.other_customer.id}/',
+            {'full_name': 'Yetkisiz değişiklik'},
+            content_type='application/json',
+            **headers,
+        )
+        users_response = self.client.get('/api/users/', **headers)
+
+        self.assertEqual(customers_response.status_code, 200)
+        self.assertEqual(
+            [item['id'] for item in customers_response.json()],
+            [self.own_customer.id],
+        )
+        self.assertEqual(update_response.status_code, 404)
+        self.assertEqual(users_response.status_code, 200)
+        self.assertNotIn(
+            other_company_user.id,
+            [item['id'] for item in users_response.json()],
+        )
+        self.other_customer.refresh_from_db()
+        self.assertEqual(self.other_customer.full_name, 'Diğer şirket müşterisi')
+
 
 class ShipmentManagementTest(CompanyTestCase):
     def setUp(self):
