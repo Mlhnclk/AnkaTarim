@@ -1,33 +1,75 @@
 {
   "name": "anka-tar-msal-takip",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.3.6",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "desktop:dev": "electron .",
+    "build:backend": "python -m pip install -r ../backend/requirements.txt && python -m PyInstaller --noconfirm --clean --onedir --name anka-backend --paths ../backend --distpath ../backend/desktop-build --workpath ../backend/desktop-build/work --specpath ../backend/desktop-build --collect-all django --collect-all rest_framework --collect-all corsheaders --collect-all whitenoise --collect-all core --collect-all config --collect-all waitress --hidden-import waitress ../backend/desktop_server.py",
+    "desktop:build": "npm run build:backend && npm run build && electron-builder --win nsis"
   },
   "dependencies": {
     "axios": "^1.20.0",
+    "exceljs": "^4.4.0",
     "lucide-react": "^1.45.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@tailwindcss/postcss": "4.3.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.6.0",
+    "electron": "^44.9.0",
+    "electron-builder": "26.15.3",
     "eslint": "^10.10.0",
     "eslint-plugin-oxlint": "^1.82.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.6",
     "globals": "^17.12.0",
     "postcss": "^8.5.28",
-    "tailwindcss": "^3.4.17",
+    "tailwindcss": "4.3.3",
     "vite": "^8.3.0"
+  },
+  "build": {
+    "appId": "com.ankatarimsal.desktop",
+    "productName": "Anka Tarimsal Takip",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/desktop-build/anka-backend",
+        "to": "backend"
+      },
+      {
+        "from": "../backend/db.sqlite3",
+        "to": "backend/anka-seed.sqlite3"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

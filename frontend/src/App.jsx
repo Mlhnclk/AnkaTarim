@@ -275,23 +275,6 @@ const formatTurkishPhone = (phone) => {
   return `+90${nationalNumber}`;
 };
 
-const downloadCsv = (rows, filename) => {
-  const csv = rows
-    .map((row) =>
-      row
-        .map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`)
-        .join(";"),
-    )
-    .join("\r\n");
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-};
-
 const BrandLogo = () => {
   return (
     <img
@@ -311,6 +294,7 @@ function App() {
   const [responsiblePersons, setResponsiblePersons] = useState([]);
   const [prices, setPrices] = useState([]);
   const [records, setRecords] = useState([]);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [merchantParties, setMerchantParties] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
@@ -915,140 +899,31 @@ function App() {
     [salesHistoryFilters, salesRecords],
   );
 
-  const exportReport = () => {
-    const exportRecords = reportDate
-      ? records.filter((record) => record.date === reportDate)
-      : records;
-    const rows = [
-      [
-        "Tarih",
-        "Üretici",
-        "Telefon",
-        "Elek",
-        "Sıra",
-        "Ürün",
-        "Numara",
-        "Miktar (KG)",
-        "Yağlık (KG)",
-        "Alış Tutarı",
-        "Verilen Ödeme",
-        "Kalan Ödeme",
-        "Sıkılmış Zeytinyağı (Litre)",
-      ],
-      ...exportRecords.map((record) => {
-        const customer = customers.find(
-          (item) =>
-            String(item.full_name || "")
-              .trim()
-              .toLocaleLowerCase("tr-TR") ===
-            String(record.customer || "")
-              .trim()
-              .toLocaleLowerCase("tr-TR"),
-        );
-        const liters = Number(customer?.oil_output_liters || 0);
-        const items = (record.items || []).flatMap((item) =>
-          sizeKeys
-            .map((size) => ({
-              item,
-              size,
-              quantity: Number(item[`size_${size}`] || 0),
-            }))
-            .filter((line) => line.quantity > 0),
-        );
-        const detailRows = items.length ? items : [{ item: null, size: "", quantity: 0 }];
-        return detailRows.map(({ item, size, quantity }) => [
-          record.date,
-          record.customer,
-          customer?.phone || "",
-          stations.find(
-            (station) => Number(station.id) === Number(record.sieve_station),
-          )?.name || "Elek",
-          record.sequence_no,
-          item?.olive_type || "",
-          size,
-          quantity ? quantity.toFixed(2) : "",
-          item
-            ? sizeKeys
-                .filter((oilSize) =>
-                  item.oil_release === "all" ||
-                  (item.oil_release === "11-12" && oilSize <= 12) ||
-                  (item.oil_release === "13-17" && oilSize >= 13),
-                )
-                .reduce((sum, oilSize) => sum + Number(item[`size_${oilSize}`] || 0), 0)
-                .toFixed(2)
-            : "",
-          Number(record.effective_purchase_amount ?? record.total_amount ?? 0).toFixed(2),
-          Number(record.total_paid || 0).toFixed(2),
-          Number(record.remaining_amount || 0).toFixed(2),
-          liters > 0 ? liters.toFixed(2) : "",
-        ]);
-      }),
-    ];
-
-    downloadCsv(rows.flat(), `alis-raporu-${reportDate || "tum"}.csv`);
+  const exportBusinessReport = async () => {
+    if (isExportingExcel) return;
+    setIsExportingExcel(true);
+    try {
+      const { downloadBusinessExcelReport } = await import("./services/excelReports");
+      await downloadBusinessExcelReport({
+        customers,
+        records,
+        stations,
+        responsiblePersons,
+        merchantParties,
+        salesRecords,
+        shipments,
+        reportDate,
+      });
+    } catch (error) {
+      console.error("Excel raporu oluşturulamadı:", error);
+      window.alert("Excel raporu oluşturulamadı. Lütfen tekrar deneyin.");
+    } finally {
+      setIsExportingExcel(false);
+    }
   };
 
-  const exportSalesReport = () => {
-    const rows = [
-      [
-        "Satış Tarihi",
-        "Satış No",
-        "Tüccar",
-        "Tüccar Türü",
-        "Tüccar Telefonu",
-        "Ürün",
-        "Numara",
-        "Miktar",
-        "Birim",
-        "Toplam Tutar",
-        "Tahsil Edilen",
-        "Kalan Bakiye",
-        "Gönderim Durumu",
-        "Gönderim Adresi",
-        "Araç Plakası",
-        "Şoför",
-        "Şoför Telefonu",
-      ],
-      ...salesRecords.flatMap((sale) => {
-        const shipment = shipments.find((item) => item.sale?.id === sale.id);
-        const productRows = [
-          ...(sale.items || []).map((item) => ({
-            product: item.olive_type,
-            size: item.size,
-            quantity: item.quantity_kg,
-            unit: "KG",
-          })),
-          ...(sale.oil_items || []).map((item) => ({
-            product: "Zeytinyağı",
-            size: "",
-            quantity: item.liters,
-            unit: "L",
-          })),
-        ];
-        const details = productRows.length ? productRows : [{ product: "", size: "", quantity: "", unit: "" }];
-        return details.map((detail) => [
-          sale.sale_date,
-          sale.sale_no,
-          sale.party?.name || "",
-          sale.party?.party_type === "corporate" ? "Kurumsal" : "Bireysel",
-          sale.party?.phone || "",
-          detail.product,
-          detail.size,
-          detail.quantity === "" ? "" : Number(detail.quantity || 0).toFixed(2),
-          detail.unit,
-          Number(sale.total_amount || 0).toFixed(2),
-          Number(sale.total_paid || sale.paid_amount || 0).toFixed(2),
-          Number(sale.remaining_amount || 0).toFixed(2),
-          shipment?.status === "Vardi" ? "Teslimat adresine ulaştı" : shipment?.status === "Yuklemede" ? "Yüklemede" : shipment?.status === "Yolda" ? "Yolda" : "Gönderim yok",
-          shipment?.delivery_address || "",
-          shipment?.vehicle?.plate || sale.vehicle?.plate || "",
-          shipment?.driver?.full_name || sale.driver?.full_name || "",
-          shipment?.driver?.phone || sale.driver?.phone || "",
-        ]);
-      }),
-    ];
-    downloadCsv(rows, "satis-raporu.csv");
-  };
+  const exportReport = exportBusinessReport;
+  const exportSalesReport = exportBusinessReport;
 
   const printHtmlInPage = (html) => {
     const frame = document.createElement("iframe");
@@ -1065,6 +940,37 @@ function App() {
     };
     frame.srcdoc = html;
     document.body.appendChild(frame);
+  };
+
+  const printReceiptHtml = async (html) => {
+    if (window.electron?.printHtml) {
+      try {
+        const ok = await window.electron.printHtml(html);
+        if (ok) return;
+        window.alert("Fiş yazdırılamadı. Varsayılan yazıcı bağlantısını kontrol edin.");
+      } catch (error) {
+        console.error("Elektron yazdırma çağrısı başarısız oldu:", error);
+        window.alert("Fiş yazdırılamadı. Yazıcı bağlantısını kontrol edin.");
+      }
+      return;
+    }
+
+    const receiptWindow = window.open("", "_blank", "width=420,height=720");
+    if (receiptWindow) {
+      receiptWindow.document.write(html);
+      receiptWindow.document.close();
+      receiptWindow.onload = () => {
+        try {
+          receiptWindow.focus();
+          receiptWindow.print();
+        } catch (error) {
+          console.error("Tarayıcı yazdırma çağrısı başarısız oldu:", error);
+        }
+      };
+      return;
+    }
+
+    printHtmlInPage(html);
   };
 
   const sendWhatsApp = async (record, phone = "", popupWindow = null) => {
@@ -1094,7 +1000,12 @@ function App() {
   };
 
   const printReceipt = (record) => {
-    const receiptWindow = window.open("", "_blank", "width=420,height=720");
+    console.log("Fiş Kes tıklandı", record);
+    if (!record) {
+      console.warn("Fiş Kes için kayıt yok.");
+      return;
+    }
+
     const messageText =
       record.whatsapp_message ||
       record.whatsapp_message_content ||
@@ -1111,13 +1022,8 @@ function App() {
             '"': "&quot;",
           })[character],
       );
-    const html = `<!doctype html><html lang="tr"><head><meta charset="UTF-8"><title>Fiş</title><style>body{font-family:Arial,sans-serif;padding:24px;max-width:360px}.message{white-space:pre-wrap;line-height:1.55}</style></head><body><h1>Anka Tarımsal Takip</h1><div class="message">${escapeHtml(messageText)}</div><script>window.onload=function(){window.print();}</script></body></html>`;
-    if (receiptWindow) {
-      receiptWindow.document.write(html);
-      receiptWindow.document.close();
-    } else {
-      printHtmlInPage(html);
-    }
+    const html = `<!doctype html><html lang="tr"><head><meta charset="UTF-8"><title>Fiş</title><style>body{font-family:Arial,sans-serif;padding:24px;max-width:360px}.message{white-space:pre-wrap;line-height:1.55}</style></head><body><h1>Anka Tarımsal Takip</h1><div class="message">${escapeHtml(messageText)}</div></body></html>`;
+    printReceiptHtml(html);
   };
 
   const printPaymentReceipt = ({
@@ -1130,7 +1036,6 @@ function App() {
     reference,
     note,
   }) => {
-    const receiptWindow = window.open("", "_blank", "width=420,height=720");
     const escapeHtml = (value) =>
       String(value ?? "").replace(
         /[&<>'"]/g,
@@ -1158,13 +1063,8 @@ function App() {
           `<div class="row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`,
       )
       .join("");
-    const html = `<!doctype html><html lang="tr"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;padding:24px;max-width:360px;color:#0f172a}h1{font-size:20px;margin:0 0 6px}.subtitle{color:#64748b;font-size:13px;margin:0 0 20px}.row{display:flex;justify-content:space-between;gap:20px;border-bottom:1px solid #e2e8f0;padding:10px 0;font-size:13px}.row span{color:#64748b}.row strong{text-align:right;white-space:pre-wrap}</style></head><body><h1>Anka Tarımsal Takip</h1><p class="subtitle">${escapeHtml(title)}</p>${rowMarkup}<script>window.onload=function(){window.print();}</script></body></html>`;
-    if (receiptWindow) {
-      receiptWindow.document.write(html);
-      receiptWindow.document.close();
-    } else {
-      printHtmlInPage(html);
-    }
+    const html = `<!doctype html><html lang="tr"><head><meta charset="UTF-8"><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;padding:24px;max-width:360px;color:#0f172a}h1{font-size:20px;margin:0 0 6px}.subtitle{color:#64748b;font-size:13px;margin:0 0 20px}.row{display:flex;justify-content:space-between;gap:20px;border-bottom:1px solid #e2e8f0;padding:10px 0;font-size:13px}.row span{color:#64748b}.row strong{text-align:right;white-space:pre-wrap}</style></head><body><h1>Anka Tarımsal Takip</h1><p class="subtitle">${escapeHtml(title)}</p>${rowMarkup}</body></html>`;
+    printReceiptHtml(html);
   };
 
   const sendProcessWhatsApp = async (customer, processStatus) => {
@@ -2614,8 +2514,6 @@ function App() {
   };
 
   const printSaleReceipt = (sale) => {
-    const receiptWindow = window.open("", "_blank", "width=420,height=720");
-    if (!receiptWindow) return;
     const message =
       sale.whatsapp_message || sale.whatsapp_message_content || "Satış bilgisi";
     const escapeHtml = (value) =>
@@ -2630,10 +2528,8 @@ function App() {
             '"': "&quot;",
           })[character],
       );
-    receiptWindow.document.write(
-      `<!doctype html><html lang="tr"><head><meta charset="UTF-8"><title>Satış Fişi</title><style>body{font-family:Arial,sans-serif;padding:24px;max-width:360px}.message{white-space:pre-wrap;line-height:1.55}</style></head><body><h1>Anka Tarımsal Takip</h1><p>Satış Fişi</p><div class="message">${escapeHtml(message)}</div><script>window.onload=function(){window.print();}</script></body></html>`,
-    );
-    receiptWindow.document.close();
+    const html = `<!doctype html><html lang="tr"><head><meta charset="UTF-8"><title>Satış Fişi</title><style>body{font-family:Arial,sans-serif;padding:24px;max-width:360px}.message{white-space:pre-wrap;line-height:1.55}</style></head><body><h1>Anka Tarımsal Takip</h1><p>Satış Fişi</p><div class="message">${escapeHtml(message)}</div></body></html>`;
+    printReceiptHtml(html);
   };
 
   const updateSaleItem = (index, field, value) => {
@@ -3937,7 +3833,9 @@ function App() {
             <h2 className="mt-1 text-2xl font-bold text-slate-900">Satış Raporu</h2>
             <p className="mt-2 text-sm text-slate-500">Tüccar, tahsilat, ürün ve gönderim durumunu tek ekranda izleyin.</p>
           </div>
-          <button type="button" onClick={exportSalesReport} className="rounded-xl bg-[#0b1f3a] px-4 py-2 text-sm font-semibold text-white">Satış CSV indir</button>
+          <button type="button" onClick={exportSalesReport} disabled={isExportingExcel} className="rounded-xl bg-[#0b1f3a] px-4 py-2 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-60">
+            {isExportingExcel ? "Excel hazırlanıyor..." : "Tüm Raporu Excel'e Aktar"}
+          </button>
         </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {[
@@ -5527,9 +5425,10 @@ function App() {
               <button
                 type="button"
                 onClick={exportReport}
+                disabled={isExportingExcel}
                 className="rounded-xl bg-[#0b1f3a] px-3 py-2 text-sm font-semibold text-white hover:bg-[#122d4f]"
               >
-                CSV Dışa Aktar
+                {isExportingExcel ? "Hazırlanıyor..." : "Tüm Raporu Excel'e Aktar"}
               </button>
             </div>
           </div>

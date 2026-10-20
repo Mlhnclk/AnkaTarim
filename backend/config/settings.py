@@ -73,6 +73,9 @@ CORS_ALLOWED_ORIGINS = [
     ).split(',')
     if origin.strip()
 ]
+DESKTOP_MODE = os.environ.get('ANKA_DESKTOP', 'false').lower() == 'true'
+if DESKTOP_MODE:
+    CORS_ALLOWED_ORIGINS = ['null']
 
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()

@@ -6,7 +6,7 @@ import oxlint from 'eslint-plugin-oxlint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', '.venv', 'node_modules']),
+  globalIgnores(['dist', 'release', '.venv', 'node_modules']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [js.configs.recommended, reactHooks.configs.flat.recommended, reactRefresh.configs.vite],
